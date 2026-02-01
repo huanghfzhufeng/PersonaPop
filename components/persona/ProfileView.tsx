@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { LogOut } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, RefreshControl, Alert } from 'react-native';
+import { LogOut, Heart, Trash2 } from 'lucide-react-native';
+import { Image } from 'expo-image';
 import { COLORS } from '../../constants/persona';
 import { supabase } from '@/lib/supabase';
 
@@ -40,6 +41,48 @@ export const ProfileView = ({ onLogout }: ProfileViewProps) => {
         fetchData();
     };
 
+    // 切换收藏状态
+    const toggleFavorite = async (id: string, currentStatus: boolean) => {
+        const { error } = await supabase
+            .from('personas')
+            .update({ is_favorite: !currentStatus })
+            .eq('id', id);
+
+        if (!error) {
+            setPersonas(prev =>
+                prev.map(p => p.id === id ? { ...p, is_favorite: !currentStatus } : p)
+            );
+        }
+    };
+
+    // 删除记录
+    const deletePersona = async (id: string) => {
+        Alert.alert(
+            '确认删除',
+            '确定要删除这条记录吗？',
+            [
+                { text: '取消', style: 'cancel' },
+                {
+                    text: '删除',
+                    style: 'destructive',
+                    onPress: async () => {
+                        const { error } = await supabase
+                            .from('personas')
+                            .delete()
+                            .eq('id', id);
+
+                        if (!error) {
+                            setPersonas(prev => prev.filter(p => p.id !== id));
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    // 计算收藏数量
+    const favoriteCount = personas.filter(p => p.is_favorite).length;
+
     const latestPersona = personas.length > 0 ? personas[0] : null;
 
     return (
@@ -73,7 +116,7 @@ export const ProfileView = ({ onLogout }: ProfileViewProps) => {
                     <Text style={styles.statLabel}>已生成</Text>
                 </View>
                 <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>0</Text>
+                    <Text style={styles.statNumber}>{favoriteCount}</Text>
                     <Text style={styles.statLabel}>收藏夹</Text>
                 </View>
             </View>
@@ -92,11 +135,45 @@ export const ProfileView = ({ onLogout }: ProfileViewProps) => {
                 ) : (
                     personas.map((item) => (
                         <View key={item.id} style={styles.collectionItem}>
-                            <View style={styles.collectionThumbnail} />
-                            {/* In real app, would display image from item.image_url */}
-                            <View>
-                                <Text style={styles.collectionTitle}>{item.mbti_type} {item.vibe}</Text>
+                            {/* 显示实际图片 */}
+                            {item.image_url ? (
+                                <Image
+                                    source={{ uri: item.image_url }}
+                                    style={styles.collectionThumbnail}
+                                    contentFit="cover"
+                                    transition={200}
+                                />
+                            ) : (
+                                <View style={[styles.collectionThumbnail, { backgroundColor: '#ddd' }]} />
+                            )}
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.collectionTitle}>{item.mbti_type} · {item.vibe}</Text>
                                 <Text style={styles.collectionTime}>{new Date(item.created_at).toLocaleDateString()}</Text>
+                                {item.result_text && (
+                                    <Text style={styles.collectionText} numberOfLines={1}>
+                                        "{item.result_text}"
+                                    </Text>
+                                )}
+                            </View>
+                            {/* 操作按钮 */}
+                            <View style={styles.itemActions}>
+                                <TouchableOpacity
+                                    onPress={() => toggleFavorite(item.id, item.is_favorite)}
+                                    style={styles.actionBtn}
+                                >
+                                    <Heart
+                                        size={20}
+                                        color={item.is_favorite ? COLORS.accent : '#999'}
+                                        fill={item.is_favorite ? COLORS.accent : 'transparent'}
+                                        strokeWidth={2}
+                                    />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => deletePersona(item.id)}
+                                    style={styles.actionBtn}
+                                >
+                                    <Trash2 size={18} color="#999" strokeWidth={2} />
+                                </TouchableOpacity>
                             </View>
                         </View>
                     ))
@@ -211,15 +288,15 @@ const styles = StyleSheet.create({
         borderStyle: 'dashed',
         borderRadius: 12,
         marginBottom: 12,
+        backgroundColor: 'white',
     },
     collectionThumbnail: {
-        width: 48,
-        height: 64,
-        backgroundColor: '#ddd',
-        borderWidth: 1,
+        width: 56,
+        height: 56,
+        borderWidth: 2,
         borderColor: COLORS.fg,
-        borderRadius: 4,
-        marginRight: 16,
+        borderRadius: 8,
+        marginRight: 12,
     },
     collectionTitle: {
         fontFamily: 'Kalam_700Bold',
@@ -230,5 +307,18 @@ const styles = StyleSheet.create({
         fontFamily: 'PatrickHand_400Regular',
         fontSize: 14,
         color: '#666',
+    },
+    collectionText: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 13,
+        color: '#888',
+        marginTop: 2,
+    },
+    itemActions: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    actionBtn: {
+        padding: 8,
     },
 });

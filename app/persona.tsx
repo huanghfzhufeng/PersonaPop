@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Image } from 'react-native';
-import { Sparkles, Share2, Download, Zap, User, Home, ArrowRight, ChevronLeft, PenTool } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
+import { Image } from 'expo-image';
+import { Sparkles, Share2, Download, Zap, User, Home, ArrowRight, ChevronLeft, PenTool, Heart } from 'lucide-react-native';
 import { useFonts, Kalam_700Bold } from '@expo-google-fonts/kalam';
 import { PatrickHand_400Regular } from '@expo-google-fonts/patrick-hand';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
+import { generatePersonaImage } from '@/lib/ai-service';
+import { shareImage, saveImageToGallery } from '@/lib/share-utils';
 
 import { COLORS, MBTI_TYPES, VIBES, COPY_TEMPLATES } from '@/constants/persona';
 import { HandButton } from '@/components/persona/HandButton';
@@ -27,6 +30,9 @@ export default function PersonaPopHandDrawn() {
     const [selectedType, setSelectedType] = useState<string | null>(null);
     const [selectedVibe, setSelectedVibe] = useState<string | null>(null);
     const [resultData, setResultData] = useState<any>(null);
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [isFavorited, setIsFavorited] = useState(false);
+    const [currentPersonaId, setCurrentPersonaId] = useState<string | null>(null);
 
     // Auth State
     const [session, setSession] = useState<any>(null);
@@ -50,44 +56,93 @@ export default function PersonaPopHandDrawn() {
         setSelectedType(null);
         setSelectedVibe(null);
         setResultData(null);
+        setIsFavorited(false);
+        setCurrentPersonaId(null);
     };
 
     const generatePersona = async () => {
+        if (isGenerating) return;
+        
         setStep(3);
+        setIsGenerating(true);
+        setIsFavorited(false);
+        setCurrentPersonaId(null);
 
-        // Simulate AI Generation + Save to DB
-        setTimeout(async () => {
+        try {
             const typeData = MBTI_TYPES.find(t => t.id === selectedType);
+            const vibeData = VIBES.find(v => v.id === selectedVibe);
             const texts = COPY_TEMPLATES[selectedType || ''] || COPY_TEMPLATES['DEFAULT'];
             const randomText = texts[Math.floor(Math.random() * texts.length)];
-            const unsplashUrl = `https://images.unsplash.com/photo-1544377193-33dcf4d68fb5?q=80&w=1000&auto=format&fit=crop`; // Placeholder image
+
+            // 使用 AI 服务生成图片
+            const imageResult = await generatePersonaImage(
+                selectedType || 'INFP',
+                selectedVibe || 'dream'
+            );
 
             const result = {
                 type: typeData,
-                vibe: VIBES.find(v => v.id === selectedVibe),
+                vibe: vibeData,
                 text: randomText,
-                imageUrl: unsplashUrl
+                imageUrl: imageResult.imageUrl,
+                isPlaceholder: imageResult.isPlaceholder
             };
 
             setResultData(result);
 
             // Save to Supabase Personas Table
             if (session?.user) {
-                const { error } = await supabase.from('personas').insert({
+                const { data, error } = await supabase.from('personas').insert({
                     user_id: session.user.id,
-                    mbti_type: selectedType,
-                    vibe: selectedVibe,
+                    mbti_type: selectedType || 'INFP',
+                    vibe: selectedVibe || 'dream',
                     result_text: randomText,
-                    image_url: unsplashUrl
-                });
+                    image_url: imageResult.imageUrl,
+                    is_favorite: false
+                }).select('id').single();
 
                 if (error) {
-                    console.log('Error saving persona (table might not exist yet):', error);
+                    console.log('Error saving persona:', error);
+                } else if (data) {
+                    setCurrentPersonaId(data.id);
                 }
             }
 
             setStep(4);
-        }, 2500);
+        } catch (error) {
+            console.error('Generation error:', error);
+            Alert.alert('生成失败', '请稍后重试');
+            setStep(2);
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    // 分享图片
+    const handleShare = async () => {
+        if (!resultData?.imageUrl) return;
+        await shareImage(resultData.imageUrl, `我的 ${resultData.type?.id} 人格卡片`);
+    };
+
+    // 保存图片
+    const handleSave = async () => {
+        if (!resultData?.imageUrl) return;
+        await saveImageToGallery(resultData.imageUrl);
+    };
+
+    // 切换收藏状态
+    const toggleFavorite = async () => {
+        if (!currentPersonaId) return;
+
+        const newStatus = !isFavorited;
+        const { error } = await supabase
+            .from('personas')
+            .update({ is_favorite: newStatus })
+            .eq('id', currentPersonaId);
+
+        if (!error) {
+            setIsFavorited(newStatus);
+        }
     };
 
     if (!fontsLoaded || isLoadingSession) {
@@ -250,29 +305,54 @@ export default function PersonaPopHandDrawn() {
                                     <View style={styles.resultFrame}>
                                         <View style={styles.tape} />
 
+                                        {/* 收藏按钮 */}
+                                        <TouchableOpacity
+                                            onPress={toggleFavorite}
+                                            style={styles.favoriteBtn}
+                                        >
+                                            <Heart
+                                                size={28}
+                                                color={isFavorited ? COLORS.accent : COLORS.fg}
+                                                fill={isFavorited ? COLORS.accent : 'transparent'}
+                                                strokeWidth={2.5}
+                                            />
+                                        </TouchableOpacity>
+
                                         <View style={styles.resultImageContainer}>
                                             <Image
                                                 source={{ uri: resultData.imageUrl }}
                                                 style={styles.resultImage}
-                                                contentFit="cover" // Expo Image style
+                                                contentFit="cover"
+                                                transition={300}
                                             />
                                             <View style={styles.dustOverlay} />
                                         </View>
 
                                         <View style={{ alignItems: 'center', marginTop: 12 }}>
-                                            <Text style={styles.resultType}>{resultData.type.id}</Text>
+                                            <Text style={styles.resultType}>{resultData.type?.id}</Text>
                                             <Text style={styles.resultText}>"{resultData.text}"</Text>
+                                            {resultData.isPlaceholder && (
+                                                <Text style={styles.placeholderHint}>
+                                                    (示例图片 - 配置 API Key 可生成 AI 图片)
+                                                </Text>
+                                            )}
                                             <Sparkles size={32} color={COLORS.accent} style={{ position: 'absolute', bottom: -10, right: 0 }} />
                                         </View>
                                     </View>
 
                                     <View style={{ flexDirection: 'row', gap: 12, marginTop: 24, width: '100%' }}>
-                                        <HandButton variant="primary" icon={Share2} style={{ flex: 1 }}>分享</HandButton>
-                                        <HandButton variant="secondary" icon={Download} style={{ flex: 1 }}>保存</HandButton>
+                                        <HandButton variant="primary" icon={Share2} style={{ flex: 1 }} onPress={handleShare}>
+                                            分享
+                                        </HandButton>
+                                        <HandButton variant="secondary" icon={Download} style={{ flex: 1 }} onPress={handleSave}>
+                                            保存
+                                        </HandButton>
                                     </View>
 
-                                    <TouchableOpacity onPress={generatePersona} style={{ marginTop: 24 }}>
-                                        <Text style={styles.rerollText}>不喜欢？重画一张</Text>
+                                    <TouchableOpacity onPress={generatePersona} style={{ marginTop: 24 }} disabled={isGenerating}>
+                                        <Text style={[styles.rerollText, isGenerating && { opacity: 0.5 }]}>
+                                            {isGenerating ? '生成中...' : '不喜欢？重画一张'}
+                                        </Text>
                                     </TouchableOpacity>
                                 </View>
                             </View>
@@ -556,6 +636,24 @@ const styles = StyleSheet.create({
         color: '#666',
         textDecorationLine: 'underline',
         textDecorationStyle: 'dotted',
+    },
+    favoriteBtn: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        zIndex: 30,
+        padding: 8,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        borderRadius: 20,
+        borderWidth: 2,
+        borderColor: COLORS.fg,
+    },
+    placeholderHint: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 12,
+        color: '#999',
+        marginTop: 8,
+        textAlign: 'center',
     },
     // Bottom Nav
     bottomNav: {
