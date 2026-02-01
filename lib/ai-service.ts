@@ -1,6 +1,6 @@
 /**
  * AI 图片生成服务
- * 支持 Gemini 图片生成 API，带降级方案
+ * 支持 apifree.ai 图片生成 API，带降级方案
  */
 
 // MBTI 类型对应的艺术风格提示词（中文优化）
@@ -32,7 +32,11 @@ const VIBE_MODIFIERS: Record<string, string> = {
     dream: '梦核美学，柔软的粉色云朵，怀旧，超现实，粉彩渐变，空灵光晕',
 };
 
-// 占位图 URL 列表（按 Vibe 分类）
+// MBTI 本地人格图片映射（透明底）
+import { MBTI_IMAGES } from '../constants/persona';
+const MBTI_LOCAL_IMAGES = MBTI_IMAGES;
+
+// 占位图 URL 列表（按 Vibe 分类，作为后备）
 const PLACEHOLDER_IMAGES: Record<string, string[]> = {
     cyberpunk: [
         'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800',
@@ -63,36 +67,55 @@ const PLACEHOLDER_IMAGES: Record<string, string[]> = {
 
 export interface GenerateImageResult {
     success: boolean;
-    imageUrl: string;
+    imageUrl: string | number;  // number for local require()
     isPlaceholder: boolean;
+    isLocalImage?: boolean;
     error?: string;
 }
 
+// 进度回调类型
+export type ProgressCallback = (progress: number, status: string) => void;
+
 // API 配置
 const API_BASE_URL = process.env.EXPO_PUBLIC_AI_API_URL || 'https://api.apifree.ai/v1';
-const API_KEY = process.env.EXPO_PUBLIC_AI_API_KEY || 'sk-piRF42W4nRXiFaTxM6mCGfsksexYM';
+const API_KEY = process.env.EXPO_PUBLIC_AI_API_KEY || '';
 const API_MODEL = process.env.EXPO_PUBLIC_AI_MODEL || 'bytedance/seedream-4.5';
 
 /**
  * 生成 AI 图片
  * @param mbtiType MBTI 类型
  * @param vibe 心情/风格
+ * @param onProgress 进度回调函数
  * @returns 图片 URL
  */
 export async function generatePersonaImage(
     mbtiType: string,
-    vibe: string
+    vibe: string,
+    onProgress?: ProgressCallback
 ): Promise<GenerateImageResult> {
-    // 如果明确禁用 AI，使用占位图
+    // 如果明确禁用 AI，使用本地 MBTI 图片
     if (process.env.EXPO_PUBLIC_DISABLE_AI === 'true') {
-        console.log('AI disabled, using placeholder image');
-        return getPlaceholderImage(vibe);
+        console.log('AI disabled, using local MBTI image');
+        return getLocalMbtiImage(mbtiType);
+    }
+
+    // 检查 API Key 是否配置
+    if (!API_KEY) {
+        console.warn('API key not configured, using local MBTI image');
+        return {
+            ...getLocalMbtiImage(mbtiType),
+            error: 'API key not configured',
+        };
     }
 
     try {
         const prompt = buildPrompt(mbtiType, vibe);
         
+        // 报告初始进度
+        onProgress?.(5, '正在准备提示词...');
+        
         // 1. 提交图片生成请求
+        onProgress?.(10, '正在提交生成请求...');
         const submitResponse = await fetch(`${API_BASE_URL}/image/submit`, {
             method: 'POST',
             headers: {
@@ -120,8 +143,10 @@ export async function generatePersonaImage(
             throw new Error('No request_id in response');
         }
 
+        onProgress?.(20, '已提交，正在排队...');
+
         // 2. 轮询获取结果
-        const imageUrl = await pollForResult(requestId);
+        const imageUrl = await pollForResult(requestId, 30, onProgress);
         
         if (!imageUrl) {
             throw new Error('No image URL found in response');
@@ -144,10 +169,22 @@ export async function generatePersonaImage(
     }
 }
 
+// 状态对应的中文描述
+const STATUS_MESSAGES: Record<string, string> = {
+    'queuing': '正在排队中...',
+    'pending': '等待处理...',
+    'processing': '正在绘制中...',
+    'running': '正在生成...',
+};
+
 /**
  * 轮询获取图片生成结果
  */
-async function pollForResult(requestId: string, maxAttempts: number = 30): Promise<string | null> {
+async function pollForResult(
+    requestId: string, 
+    maxAttempts: number = 30,
+    onProgress?: ProgressCallback
+): Promise<string | null> {
     const pollInterval = 2000; // 2秒轮询一次
     
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -175,7 +212,13 @@ async function pollForResult(requestId: string, maxAttempts: number = 30): Promi
 
             const status = data.resp_data?.status;
             
+            // 计算进度: 20% 开始，95% 结束，留 5% 给最后处理
+            const progress = Math.min(20 + (attempt / maxAttempts) * 75, 95);
+            const statusMessage = STATUS_MESSAGES[status] || `处理中 (${status})...`;
+            onProgress?.(progress, statusMessage);
+            
             if (status === 'success') {
+                onProgress?.(100, '生成完成!');
                 const imageList = data.resp_data?.image_list;
                 if (imageList && imageList.length > 0) {
                     return imageList[0];
@@ -210,9 +253,37 @@ Make it feel personal and unique, like something from an artist's sketchbook.`;
 }
 
 /**
- * 获取占位图
+ * 获取本地 MBTI 人格图片
  */
-function getPlaceholderImage(vibe: string): GenerateImageResult {
+export function getLocalMbtiImage(mbtiType: string): GenerateImageResult {
+    const localImage = MBTI_LOCAL_IMAGES[mbtiType];
+    if (localImage) {
+        return {
+            success: true,
+            imageUrl: localImage,
+            isPlaceholder: true,
+            isLocalImage: true,
+        };
+    }
+    // 后备：使用默认图片
+    return {
+        success: true,
+        imageUrl: MBTI_LOCAL_IMAGES['INFP'],
+        isPlaceholder: true,
+        isLocalImage: true,
+    };
+}
+
+/**
+ * 获取占位图（优先使用本地 MBTI 图片）
+ */
+function getPlaceholderImage(vibe: string, mbtiType?: string): GenerateImageResult {
+    // 如果有 MBTI 类型，优先使用本地图片
+    if (mbtiType && MBTI_LOCAL_IMAGES[mbtiType]) {
+        return getLocalMbtiImage(mbtiType);
+    }
+    
+    // 后备：使用 Unsplash 图片
     const images = PLACEHOLDER_IMAGES[vibe] || PLACEHOLDER_IMAGES['dream'];
     const randomIndex = Math.floor(Math.random() * images.length);
     

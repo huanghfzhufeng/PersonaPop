@@ -7,6 +7,26 @@ export const COLORS = {
     yellow: '#fff9c4',
 };
 
+// MBTI 人格角色图片映射（透明底）
+export const MBTI_IMAGES: Record<string, any> = {
+    INTJ: require('../MMM/0-removebg-preview.png'),
+    INTP: require('../MMM/1-Photoroom.png'),
+    ENTJ: require('../MMM/2-Photoroom.png'),
+    ENTP: require('../MMM/3-Photoroom.png'),
+    INFJ: require('../MMM/4-Photoroom.png'),
+    INFP: require('../MMM/5-Photoroom.png'),
+    ENFJ: require('../MMM/6-Photoroom.png'),
+    ENFP: require('../MMM/7-Photoroom.png'),
+    ISTJ: require('../MMM/8-Photoroom.png'),
+    ISFJ: require('../MMM/01-Photoroom.png'),
+    ESTJ: require('../MMM/11-Photoroom.png'),
+    ESFJ: require('../MMM/w2-Photoroom.png'),
+    ISTP: require('../MMM/33-Photoroom.png'),
+    ISFP: require('../MMM/55-Photoroom.png'),
+    ESTP: require('../MMM/43-Photoroom.png'),
+    ESFP: require('../MMM/65-Photoroom.png'),
+};
+
 export const MBTI_TYPES = [
     { id: 'INTJ', label: 'INTJ', name: '建筑师', color: '#f3e8ff' },
     { id: 'INTP', label: 'INTP', name: '逻辑学家', color: '#f3e8ff' },

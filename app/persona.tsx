@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { Image } from 'expo-image';
-import { Sparkles, Share2, Download, Zap, User, Home, ArrowRight, ChevronLeft, PenTool, Heart } from 'lucide-react-native';
+import { Sparkles, Share2, Download, Zap, User, Home, ArrowRight, ChevronLeft, PenTool, Heart, HelpCircle } from 'lucide-react-native';
 import { useFonts, Kalam_700Bold } from '@expo-google-fonts/kalam';
 import { PatrickHand_400Regular } from '@expo-google-fonts/patrick-hand';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
-import { generatePersonaImage } from '@/lib/ai-service';
+import { generatePersonaImage, ProgressCallback } from '@/lib/ai-service';
+import { generateMbtiInsight } from '@/lib/deepseek-service';
 import { shareImage, saveImageToGallery } from '@/lib/share-utils';
 
-import { COLORS, MBTI_TYPES, VIBES, COPY_TEMPLATES } from '@/constants/persona';
+import { COLORS, MBTI_TYPES, VIBES, COPY_TEMPLATES, MBTI_IMAGES } from '@/constants/persona';
+import { MBTI_FACTS, LOADING_MESSAGES } from '@/constants/mbti-facts';
 import { HandButton } from '@/components/persona/HandButton';
 import { HandCard } from '@/components/persona/HandCard';
 import { StickyNote } from '@/components/persona/StickyNote';
 import { AuthView } from '@/components/persona/AuthView';
 import { ProfileView } from '@/components/persona/ProfileView';
+import { MbtiTest } from '@/components/persona/MbtiTest';
 
 // Types
 type Tab = 'home' | 'create' | 'profile';
@@ -33,6 +36,13 @@ export default function PersonaPopHandDrawn() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [isFavorited, setIsFavorited] = useState(false);
     const [currentPersonaId, setCurrentPersonaId] = useState<string | null>(null);
+    
+    // 进度状态
+    const [generationProgress, setGenerationProgress] = useState(0);
+    const [generationStatus, setGenerationStatus] = useState('');
+    const [currentFact, setCurrentFact] = useState('');
+    const [showMbtiTest, setShowMbtiTest] = useState(false);
+    const [aiInsight, setAiInsight] = useState('');
 
     // Auth State
     const [session, setSession] = useState<any>(null);
@@ -58,6 +68,14 @@ export default function PersonaPopHandDrawn() {
         setResultData(null);
         setIsFavorited(false);
         setCurrentPersonaId(null);
+        setShowMbtiTest(false);
+    };
+
+    // Handle MBTI test completion
+    const handleTestComplete = (mbtiType: string) => {
+        setSelectedType(mbtiType);
+        setShowMbtiTest(false);
+        setStep(2); // Go to vibe selection
     };
 
     const generatePersona = async () => {
@@ -67,6 +85,20 @@ export default function PersonaPopHandDrawn() {
         setIsGenerating(true);
         setIsFavorited(false);
         setCurrentPersonaId(null);
+        setGenerationProgress(0);
+        setGenerationStatus(LOADING_MESSAGES[0]);
+        
+        // 设置随机趣事
+        const facts = MBTI_FACTS[selectedType || 'INFP']?.facts || [];
+        if (facts.length > 0) {
+            setCurrentFact(facts[Math.floor(Math.random() * facts.length)]);
+        }
+        
+        // 异步获取 AI 洞察
+        setAiInsight('');
+        generateMbtiInsight(selectedType || 'INFP', selectedVibe || 'dream')
+            .then(insight => setAiInsight(insight))
+            .catch(() => setAiInsight(''));
 
         try {
             const typeData = MBTI_TYPES.find(t => t.id === selectedType);
@@ -74,10 +106,17 @@ export default function PersonaPopHandDrawn() {
             const texts = COPY_TEMPLATES[selectedType || ''] || COPY_TEMPLATES['DEFAULT'];
             const randomText = texts[Math.floor(Math.random() * texts.length)];
 
+            // 进度回调函数
+            const handleProgress: ProgressCallback = (progress, status) => {
+                setGenerationProgress(progress);
+                setGenerationStatus(status);
+            };
+
             // 使用 AI 服务生成图片
             const imageResult = await generatePersonaImage(
                 selectedType || 'INFP',
-                selectedVibe || 'dream'
+                selectedVibe || 'dream',
+                handleProgress
             );
 
             const result = {
@@ -85,7 +124,8 @@ export default function PersonaPopHandDrawn() {
                 vibe: vibeData,
                 text: randomText,
                 imageUrl: imageResult.imageUrl,
-                isPlaceholder: imageResult.isPlaceholder
+                isPlaceholder: imageResult.isPlaceholder,
+                isLocalImage: imageResult.isLocalImage
             };
 
             setResultData(result);
@@ -220,6 +260,15 @@ export default function PersonaPopHandDrawn() {
                                     开始涂鸦
                                 </HandButton>
 
+                                {/* 吉祥物图片 */}
+                                <View style={styles.heroMascotContainer}>
+                                    <Image
+                                        source={require('@/assets/images/mascot-home.png')}
+                                        style={styles.heroMascot}
+                                        contentFit="contain"
+                                    />
+                                </View>
+
                                 <View style={styles.socialProof}>
                                     <View style={styles.line} />
                                     <Text style={styles.socialText}>已有 12k+ 人创作</Text>
@@ -229,27 +278,50 @@ export default function PersonaPopHandDrawn() {
                         )}
 
                         {/* STEP 1: TYPE SELECTION */}
-                        {step === 1 && (
+                        {step === 1 && !showMbtiTest && (
                             <View style={{ flex: 1 }}>
                                 <Header title="你是哪种人格?" showBack onBack={() => { setStep(0); setActiveTab('home'); }} />
+                                
+                                {/* 不确定？测一测按钮 */}
+                                <TouchableOpacity 
+                                    style={styles.testButton}
+                                    onPress={() => setShowMbtiTest(true)}
+                                >
+                                    <HelpCircle size={20} color={COLORS.accent} />
+                                    <Text style={styles.testButtonText}>不确定自己的类型？测一测</Text>
+                                </TouchableOpacity>
+                                
                                 <View style={styles.grid}>
                                     {MBTI_TYPES.map((type) => (
                                         <HandCard
                                             key={type.id}
                                             onPress={() => { setSelectedType(type.id); setStep(2); }}
-                                            style={{ width: '47%', marginBottom: 16, height: 140 }}
+                                            style={{ width: '47%', marginBottom: 16, height: 180 }}
                                         >
-                                            <View style={{ flex: 1, justifyContent: 'space-between' }}>
-                                                <View>
+                                            <View style={{ flex: 1, alignItems: 'center' }}>
+                                                {/* 角色图片 */}
+                                                <Image
+                                                    source={MBTI_IMAGES[type.id]}
+                                                    style={styles.typeCardImage}
+                                                    contentFit="contain"
+                                                />
+                                                <View style={{ alignItems: 'center', marginTop: 4 }}>
                                                     <Text style={styles.cardTitle}>{type.id}</Text>
                                                     <Text style={styles.cardSubtitle}>{type.name}</Text>
                                                 </View>
-                                                <View style={[styles.colorBar, { backgroundColor: type.color }]} />
                                             </View>
                                         </HandCard>
                                     ))}
                                 </View>
                             </View>
+                        )}
+
+                        {/* MBTI TEST */}
+                        {step === 1 && showMbtiTest && (
+                            <MbtiTest
+                                onComplete={handleTestComplete}
+                                onBack={() => setShowMbtiTest(false)}
+                            />
                         )}
 
                         {/* STEP 2: VIBE SELECTION */}
@@ -280,17 +352,57 @@ export default function PersonaPopHandDrawn() {
                         )}
 
                         {/* STEP 3: LOADING */}
-                        {step === 3 && (
+                        {step === 3 && selectedType && (
                             <View style={[styles.stepContainer, { justifyContent: 'center', alignItems: 'center' }]}>
-                                <View style={{ marginBottom: 32 }}>
-                                    <PenTool size={64} color={COLORS.fg} />
+                                {/* 角色图片 */}
+                                <View style={styles.loadingImageContainer}>
+                                    <Image
+                                        source={MBTI_IMAGES[selectedType]}
+                                        style={styles.loadingImage}
+                                        contentFit="contain"
+                                    />
                                 </View>
-                                <Text style={styles.loadingTitle}>正在素描中...</Text>
+                                
+                                {/* 类型名称 */}
+                                <Text style={styles.loadingType}>
+                                    {selectedType} · {MBTI_TYPES.find(t => t.id === selectedType)?.name}
+                                </Text>
+                                
+                                {/* 特点标签 */}
+                                <View style={styles.traitsContainer}>
+                                    {MBTI_FACTS[selectedType]?.traits.map((trait, index) => (
+                                        <View key={index} style={styles.traitTag}>
+                                            <Text style={styles.traitText}>{trait}</Text>
+                                        </View>
+                                    ))}
+                                </View>
+                                
+                                {/* 进度条 */}
+                                <Text style={styles.loadingTitle}>{generationStatus || '正在素描中...'}</Text>
                                 <View style={styles.loadingBar}>
-                                    <View style={styles.loadingProgress} />
+                                    <View style={[styles.loadingProgress, { width: `${generationProgress}%` }]} />
                                 </View>
-                                <Text style={[styles.noteText, { marginTop: 16, color: '#888' }]}>
-                                    正在捕捉 {selectedType} 的灵魂碎片
+                                <Text style={styles.progressText}>{Math.round(generationProgress)}%</Text>
+                                
+                                {/* AI 洞察 */}
+                                {aiInsight ? (
+                                    <View style={styles.aiInsightCard}>
+                                        <Text style={styles.aiInsightEmoji}>🤖</Text>
+                                        <Text style={styles.aiInsightText}>{aiInsight}</Text>
+                                    </View>
+                                ) : (
+                                    /* 趣事卡片 */
+                                    currentFact && (
+                                        <View style={styles.factCard}>
+                                            <Text style={styles.factEmoji}>💡</Text>
+                                            <Text style={styles.factText}>{currentFact}</Text>
+                                        </View>
+                                    )
+                                )}
+                                
+                                {/* 有趣语录 */}
+                                <Text style={styles.funnyQuote}>
+                                    "{MBTI_FACTS[selectedType]?.funnyQuote}"
                                 </Text>
                             </View>
                         )}
@@ -320,7 +432,7 @@ export default function PersonaPopHandDrawn() {
 
                                         <View style={styles.resultImageContainer}>
                                             <Image
-                                                source={{ uri: resultData.imageUrl }}
+                                                source={resultData.isLocalImage ? resultData.imageUrl : { uri: resultData.imageUrl }}
                                                 style={styles.resultImage}
                                                 contentFit="cover"
                                                 transition={300}
@@ -444,9 +556,18 @@ const styles = StyleSheet.create({
         elevation: 0,
     },
     // Hero
+    heroMascotContainer: {
+        width: 180,
+        height: 180,
+        marginBottom: 16,
+    },
+    heroMascot: {
+        width: '100%',
+        height: '100%',
+    },
     logoContainer: {
         alignItems: 'center',
-        marginBottom: 32,
+        marginBottom: 24,
     },
     logoBox: {
         width: 96,
@@ -496,6 +617,26 @@ const styles = StyleSheet.create({
         fontSize: 18,
         color: COLORS.fg,
     },
+    // Test button
+    testButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'white',
+        borderWidth: 2,
+        borderColor: COLORS.accent,
+        borderStyle: 'dashed',
+        borderRadius: 12,
+        padding: 12,
+        marginHorizontal: 24,
+        marginBottom: 16,
+        gap: 8,
+    },
+    testButtonText: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 16,
+        color: COLORS.accent,
+    },
     // Cards
     grid: {
         flexDirection: 'row',
@@ -505,14 +646,18 @@ const styles = StyleSheet.create({
     },
     cardTitle: {
         fontFamily: 'Kalam_700Bold',
-        fontSize: 28,
+        fontSize: 22,
         color: COLORS.fg,
         transform: [{ rotate: '-1deg' }],
     },
     cardSubtitle: {
         fontFamily: 'PatrickHand_400Regular',
-        fontSize: 16,
+        fontSize: 14,
         color: '#666',
+    },
+    typeCardImage: {
+        width: 100,
+        height: 100,
     },
     colorBar: {
         height: 12,
@@ -552,25 +697,121 @@ const styles = StyleSheet.create({
         color: '#666',
     },
     // Loading
+    loadingImageContainer: {
+        width: 160,
+        height: 160,
+        marginBottom: 16,
+    },
+    loadingImage: {
+        width: '100%',
+        height: '100%',
+    },
+    loadingType: {
+        fontFamily: 'Kalam_700Bold',
+        fontSize: 28,
+        color: COLORS.fg,
+        marginBottom: 12,
+    },
+    traitsContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        gap: 8,
+        marginBottom: 20,
+    },
+    traitTag: {
+        backgroundColor: COLORS.yellow,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 2,
+        borderColor: COLORS.fg,
+    },
+    traitText: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 14,
+        color: COLORS.fg,
+    },
     loadingTitle: {
         fontFamily: 'Kalam_700Bold',
-        fontSize: 32,
+        fontSize: 20,
         color: COLORS.fg,
-        marginTop: 20,
+        marginTop: 8,
     },
     loadingBar: {
-        width: 200,
-        height: 18,
+        width: 240,
+        height: 16,
         borderWidth: 3,
         borderColor: COLORS.fg,
-        borderRadius: 9,
-        marginTop: 16,
+        borderRadius: 8,
+        marginTop: 12,
         overflow: 'hidden',
+        backgroundColor: 'white',
     },
     loadingProgress: {
         height: '100%',
-        width: '60%',
         backgroundColor: COLORS.accent,
+        borderRadius: 5,
+    },
+    progressText: {
+        fontFamily: 'Kalam_700Bold',
+        fontSize: 18,
+        color: COLORS.accent,
+        marginTop: 6,
+    },
+    factCard: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        backgroundColor: 'white',
+        borderWidth: 2,
+        borderColor: COLORS.fg,
+        borderRadius: 12,
+        padding: 12,
+        marginTop: 20,
+        maxWidth: 300,
+        borderStyle: 'dashed',
+    },
+    factEmoji: {
+        fontSize: 20,
+        marginRight: 8,
+    },
+    factText: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 14,
+        color: COLORS.fg,
+        flex: 1,
+        lineHeight: 20,
+    },
+    aiInsightCard: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        backgroundColor: COLORS.accent,
+        borderWidth: 3,
+        borderColor: COLORS.fg,
+        borderRadius: 12,
+        padding: 12,
+        marginTop: 20,
+        maxWidth: 300,
+    },
+    aiInsightEmoji: {
+        fontSize: 20,
+        marginRight: 8,
+    },
+    aiInsightText: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 15,
+        color: 'white',
+        flex: 1,
+        lineHeight: 22,
+    },
+    funnyQuote: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 16,
+        color: '#888',
+        fontStyle: 'italic',
+        marginTop: 16,
+        textAlign: 'center',
+        paddingHorizontal: 20,
     },
     // Result
     resultFrame: {

@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Dimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { User, Mail, Lock, Sparkles } from 'lucide-react-native';
 import { COLORS } from '../../constants/persona';
 import { HandInput } from './HandInput';
 import { HandButton } from './HandButton';
 import { supabase } from '../../lib/supabase';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Type definition for props
 interface AuthViewProps {
@@ -56,6 +59,13 @@ export const AuthView = ({ onLogin }: AuthViewProps) => {
 
     return (
         <View style={styles.container}>
+            {/* Mascot Character */}
+            <Image
+                source={require('../../assets/images/mascot-login.png')}
+                style={styles.mascot}
+                contentFit="contain"
+            />
+            
             <View style={styles.content}>
                 {/* Decorative Tape */}
                 <View style={styles.tape} />
@@ -63,9 +73,6 @@ export const AuthView = ({ onLogin }: AuthViewProps) => {
                 {/* Main Form Card */}
                 <View style={styles.card}>
                     <View style={{ alignItems: 'center', marginBottom: 24 }}>
-                        <View style={styles.iconCircle}>
-                            <User size={32} color={COLORS.fg} strokeWidth={2.5} />
-                        </View>
                         <Text style={styles.title}>
                             {isLogin ? '欢迎回来!' : '加入我们!'}
                         </Text>
@@ -129,6 +136,13 @@ const styles = StyleSheet.create({
         padding: 24,
         justifyContent: 'center',
     },
+    mascot: {
+        width: SCREEN_WIDTH * 0.5,
+        height: SCREEN_WIDTH * 0.5,
+        alignSelf: 'center',
+        marginBottom: -20,
+        zIndex: 20,
+    },
     content: {
         position: 'relative',
         maxWidth: 400, // Limit width on tablets
@@ -160,14 +174,6 @@ const styles = StyleSheet.create({
         shadowOpacity: 1,
         shadowRadius: 0,
         zIndex: 10,
-    },
-    iconCircle: {
-        padding: 12,
-        borderRadius: 50,
-        borderWidth: 3,
-        borderColor: COLORS.fg,
-        backgroundColor: COLORS.yellow,
-        marginBottom: 16,
     },
     title: {
         fontFamily: 'Kalam_700Bold',
