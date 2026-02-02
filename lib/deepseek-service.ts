@@ -277,3 +277,101 @@ export async function analyzeTestResult(mbtiType: string, answers: Record<number
 
     return callDeepSeek(messages);
 }
+
+/**
+ * AI 聊天功能 - 用于 AI 助手对话
+ * @param systemPrompt 系统提示词（定义 AI 的角色和行为）
+ * @param userMessage 用户消息
+ * @param maxTokens 最大输出 token 数
+ */
+export async function chat(
+    systemPrompt: string,
+    userMessage: string,
+    maxTokens: number = 800
+): Promise<string> {
+    const messages: ChatMessage[] = [
+        {
+            role: 'system',
+            content: systemPrompt,
+        },
+        {
+            role: 'user',
+            content: userMessage,
+        },
+    ];
+
+    try {
+        const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+            },
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages,
+                temperature: 0.85,
+                max_tokens: maxTokens,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('DeepSeek API error:', response.status, errorText);
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        const data: DeepSeekResponse = await response.json();
+        return data.choices[0]?.message?.content || '';
+    } catch (error) {
+        console.error('Chat API error:', error);
+        throw error;
+    }
+}
+
+/**
+ * 带对话历史的 AI 聊天
+ * @param systemPrompt 系统提示词
+ * @param conversationHistory 对话历史
+ * @param userMessage 当前用户消息
+ */
+export async function chatWithHistory(
+    systemPrompt: string,
+    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    userMessage: string,
+    maxTokens: number = 800
+): Promise<string> {
+    const messages: ChatMessage[] = [
+        { role: 'system', content: systemPrompt },
+        ...conversationHistory.slice(-8), // 保留最近8条历史
+        { role: 'user', content: userMessage },
+    ];
+
+    try {
+        const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+            },
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages,
+                temperature: 0.85,
+                max_tokens: maxTokens,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('DeepSeek API error:', response.status, errorText);
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        const data: DeepSeekResponse = await response.json();
+        return data.choices[0]?.message?.content || '';
+    } catch (error) {
+        console.error('ChatWithHistory API error:', error);
+        throw error;
+    }
+}

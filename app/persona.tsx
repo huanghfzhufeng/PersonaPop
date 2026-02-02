@@ -21,13 +21,17 @@ import { MbtiTest } from '@/components/persona/MbtiTest';
 import { MbtiResultView } from '@/components/persona/MbtiResultView';
 import { MbtiDetailView } from '@/components/persona/MbtiDetailView';
 import { TypeCompareView } from '@/components/persona/TypeCompareView';
+import { EmojiView } from '@/components/persona/EmojiView';
+import { FortuneView } from '@/components/persona/FortuneView';
+import { MatchView } from '@/components/persona/MatchView';
+import { AiChatView } from '@/components/persona/AiChatView';
 import { MbtiResult, Answers, StoredMbtiResult, TestMode } from '@/lib/mbti-types';
 
 // Types
 type Tab = 'home' | 'create' | 'profile';
 // 主流程阶段: home(欢迎) -> test(测试) -> result(玩法中心) -> detail(AI详情) -> vibe(风格选择) -> generating(生成中) -> card(卡片结果)
-// quickSelect: 快速选择类型(跳过测试), compare: 类型对比
-type AppPhase = 'home' | 'test' | 'result' | 'detail' | 'vibe' | 'generating' | 'card' | 'quickSelect' | 'compare';
+// quickSelect: 快速选择类型, compare: 类型对比, emoji: 人格表情, fortune: 每日运势, match: 缘分匹配, chat: AI助手
+type AppPhase = 'home' | 'test' | 'result' | 'detail' | 'vibe' | 'generating' | 'card' | 'quickSelect' | 'compare' | 'emoji' | 'fortune' | 'match' | 'chat';
 
 export default function PersonaPopHandDrawn() {
     let [fontsLoaded] = useFonts({
@@ -522,12 +526,48 @@ export default function PersonaPopHandDrawn() {
                                 onGenerateCard={() => setPhase('vibe')}
                                 onViewDetail={() => setPhase('detail')}
                                 onCompare={() => setPhase('compare')}
+                                onEmoji={() => setPhase('emoji')}
+                                onFortune={() => setPhase('fortune')}
+                                onMatch={() => setPhase('match')}
+                                onChat={() => setPhase('chat')}
                             />
                         )}
 
                         {/* PHASE: COMPARE - 类型对比 */}
                         {phase === 'compare' && mbtiResult && (
                             <TypeCompareView
+                                myType={mbtiResult.type}
+                                onBack={() => setPhase('result')}
+                            />
+                        )}
+
+                        {/* PHASE: EMOJI - 人格表情 */}
+                        {phase === 'emoji' && mbtiResult && (
+                            <EmojiView
+                                myType={mbtiResult.type}
+                                onBack={() => setPhase('result')}
+                            />
+                        )}
+
+                        {/* PHASE: FORTUNE - 每日运势 */}
+                        {phase === 'fortune' && mbtiResult && (
+                            <FortuneView
+                                myType={mbtiResult.type}
+                                onBack={() => setPhase('result')}
+                            />
+                        )}
+
+                        {/* PHASE: MATCH - 缘分匹配 */}
+                        {phase === 'match' && mbtiResult && (
+                            <MatchView
+                                myType={mbtiResult.type}
+                                onBack={() => setPhase('result')}
+                            />
+                        )}
+
+                        {/* PHASE: CHAT - AI 助手 */}
+                        {phase === 'chat' && mbtiResult && (
+                            <AiChatView
                                 myType={mbtiResult.type}
                                 onBack={() => setPhase('result')}
                             />

@@ -12,6 +12,10 @@ interface MbtiResultViewProps {
   onGenerateCard: () => void;
   onViewDetail?: () => void;
   onCompare?: () => void;
+  onEmoji?: () => void;
+  onFortune?: () => void;
+  onMatch?: () => void;
+  onChat?: () => void;
 }
 
 /**
@@ -21,11 +25,11 @@ interface MbtiResultViewProps {
 // 功能卡片数据
 const FEATURES = [
   { id: 'card', title: '人格卡片', desc: '专属艺术卡片', icon: Palette, color: '#ff4d4d', disabled: false },
-  { id: 'compare', title: '类型对比', desc: '和朋友比一比', icon: Users, color: '#2d5da1', disabled: false, isNew: true },
-  { id: 'emoji', title: '人格表情', desc: '专属表情包', icon: Smile, color: '#fff9c4', disabled: true },
-  { id: 'fortune', title: '每日运势', desc: '人格日报', icon: Calendar, color: '#a8d5ba', disabled: true },
-  { id: 'match', title: '缘分匹配', desc: '测测契合度', icon: Heart, color: '#f8b4b4', disabled: true },
-  { id: 'ai', title: 'AI 助手', desc: '智能对话', icon: MessageCircle, color: '#b8a9c9', disabled: true },
+  { id: 'compare', title: '类型对比', desc: '和朋友比一比', icon: Users, color: '#2d5da1', disabled: false },
+  { id: 'emoji', title: '人格表情', desc: '专属表情包', icon: Smile, color: '#fff9c4', disabled: false },
+  { id: 'fortune', title: '每日运势', desc: '人格日报', icon: Calendar, color: '#a8d5ba', disabled: false, isNew: true },
+  { id: 'match', title: '缘分匹配', desc: '测测契合度', icon: Heart, color: '#f8b4b8', disabled: false },
+  { id: 'ai', title: 'AI 助手', desc: '智能对话', icon: MessageCircle, color: '#b8a9c9', disabled: false },
 ];
 
 export const MbtiResultView = ({
@@ -34,6 +38,10 @@ export const MbtiResultView = ({
   onGenerateCard,
   onViewDetail,
   onCompare,
+  onEmoji,
+  onFortune,
+  onMatch,
+  onChat,
 }: MbtiResultViewProps) => {
   const typeInfo = MBTI_TYPES.find((t) => t.id === result.type);
   const mbtiImage = MBTI_IMAGES[result.type];
@@ -160,6 +168,10 @@ export const MbtiResultView = ({
               onPress={
                 feature.id === 'card' ? onGenerateCard : 
                 feature.id === 'compare' ? onCompare : 
+                feature.id === 'emoji' ? onEmoji :
+                feature.id === 'fortune' ? onFortune :
+                feature.id === 'match' ? onMatch :
+                feature.id === 'ai' ? onChat :
                 undefined
               }
               activeOpacity={feature.disabled ? 1 : 0.8}
