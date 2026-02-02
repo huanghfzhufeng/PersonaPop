@@ -11,6 +11,7 @@ interface MbtiResultViewProps {
   testDate?: string;
   onGenerateCard: () => void;
   onViewDetail?: () => void;
+  onCompare?: () => void;
 }
 
 /**
@@ -32,6 +33,7 @@ export const MbtiResultView = ({
   testDate,
   onGenerateCard,
   onViewDetail,
+  onCompare,
 }: MbtiResultViewProps) => {
   const typeInfo = MBTI_TYPES.find((t) => t.id === result.type);
   const mbtiImage = MBTI_IMAGES[result.type];
@@ -155,7 +157,11 @@ export const MbtiResultView = ({
             <TouchableOpacity
               key={feature.id}
               style={[styles.featureCard, feature.disabled && styles.featureCardDisabled]}
-              onPress={feature.id === 'card' ? onGenerateCard : undefined}
+              onPress={
+                feature.id === 'card' ? onGenerateCard : 
+                feature.id === 'compare' ? onCompare : 
+                undefined
+              }
               activeOpacity={feature.disabled ? 1 : 0.8}
             >
               <View style={[styles.featureIcon, { backgroundColor: feature.color }]}>

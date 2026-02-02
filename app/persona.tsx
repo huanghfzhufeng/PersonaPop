@@ -20,13 +20,14 @@ import { ProfileView } from '@/components/persona/ProfileView';
 import { MbtiTest } from '@/components/persona/MbtiTest';
 import { MbtiResultView } from '@/components/persona/MbtiResultView';
 import { MbtiDetailView } from '@/components/persona/MbtiDetailView';
+import { TypeCompareView } from '@/components/persona/TypeCompareView';
 import { MbtiResult, Answers, StoredMbtiResult, TestMode } from '@/lib/mbti-types';
 
 // Types
 type Tab = 'home' | 'create' | 'profile';
 // 主流程阶段: home(欢迎) -> test(测试) -> result(玩法中心) -> detail(AI详情) -> vibe(风格选择) -> generating(生成中) -> card(卡片结果)
-// quickSelect: 快速选择类型(跳过测试)
-type AppPhase = 'home' | 'test' | 'result' | 'detail' | 'vibe' | 'generating' | 'card' | 'quickSelect';
+// quickSelect: 快速选择类型(跳过测试), compare: 类型对比
+type AppPhase = 'home' | 'test' | 'result' | 'detail' | 'vibe' | 'generating' | 'card' | 'quickSelect' | 'compare';
 
 export default function PersonaPopHandDrawn() {
     let [fontsLoaded] = useFonts({
@@ -406,15 +407,17 @@ export default function PersonaPopHandDrawn() {
                                         {mbtiResult ? '重新测试' : '开始测试'}
                                     </HandButton>
 
-                                    {/* 跳过测试入口 */}
-                                    <TouchableOpacity 
-                                        onPress={() => setPhase('quickSelect')} 
-                                        style={styles.skipTestLink}
-                                    >
-                                        <Text style={styles.skipTestText}>
-                                            {mbtiResult ? '换个类型试试' : '已知道自己的类型？直接选择'}
-                                        </Text>
-                                    </TouchableOpacity>
+                                    {/* 跳过测试入口 - 仅新用户显示 */}
+                                    {!mbtiResult && (
+                                        <TouchableOpacity 
+                                            onPress={() => setPhase('quickSelect')} 
+                                            style={styles.skipTestLink}
+                                        >
+                                            <Text style={styles.skipTestText}>
+                                                已知道自己的类型？直接选择
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
 
                                     {/* 探索 16 种人格 - 所有用户都显示 */}
                                     <View style={styles.exploreSection}>
@@ -427,6 +430,7 @@ export default function PersonaPopHandDrawn() {
                                             horizontal 
                                             showsHorizontalScrollIndicator={false}
                                             contentContainerStyle={styles.exploreScroll}
+                                            contentOffset={{ x: 40, y: 0 }}
                                         >
                                             {MBTI_TYPES.map((type) => (
                                                 <TouchableOpacity
@@ -516,8 +520,16 @@ export default function PersonaPopHandDrawn() {
                                 result={mbtiResult}
                                 testDate={storedResultDate || undefined}
                                 onGenerateCard={() => setPhase('vibe')}
-                                onRetakeTest={() => setPhase('test')}
                                 onViewDetail={() => setPhase('detail')}
+                                onCompare={() => setPhase('compare')}
+                            />
+                        )}
+
+                        {/* PHASE: COMPARE - 类型对比 */}
+                        {phase === 'compare' && mbtiResult && (
+                            <TypeCompareView
+                                myType={mbtiResult.type}
+                                onBack={() => setPhase('result')}
                             />
                         )}
 
