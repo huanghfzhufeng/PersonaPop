@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/images/logo.png" alt="PersonaPop Logo" width="120" height="auto" />
+</div>
+
 # PersonaPop (人格泡泡) 🎨
 
 PersonaPop 是由 **React Native (Expo)** 和 **Supabase** 构建的手绘风格 MBTI 人格生成器。它允许用户根据他们的 MBTI 类型和当前心情生成独特的艺术人格卡片。
