@@ -136,7 +136,7 @@ export const MbtiResultView = ({
 
         {/* 点击查看详情提示 */}
         {onViewDetail && (
-          <Text style={styles.viewDetailHint}>点击查看 AI 人格解码 →</Text>
+          <Text style={styles.viewDetailHint}>点击查看更多 ✨</Text>
         )}
       </TouchableOpacity>
 
@@ -272,11 +272,11 @@ const styles = StyleSheet.create({
   },
   viewDetailHint: {
     fontFamily: 'PatrickHand_400Regular',
-    fontSize: 14,
-    color: COLORS.accent,
+    fontSize: 13,
+    color: '#aaa',
     marginTop: 12,
     textAlign: 'center',
-    textDecorationLine: 'underline',
+    fontStyle: 'italic',
   },
   sectionTitle: {
     fontFamily: 'Kalam_700Bold',

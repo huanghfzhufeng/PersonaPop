@@ -25,6 +25,7 @@ import { EmojiView } from '@/components/persona/EmojiView';
 import { FortuneView } from '@/components/persona/FortuneView';
 import { MatchView } from '@/components/persona/MatchView';
 import { AiChatView } from '@/components/persona/AiChatView';
+import { LoadingView } from '@/components/persona/LoadingView';
 import { MbtiResult, Answers, StoredMbtiResult, TestMode } from '@/lib/mbti-types';
 
 // Types
@@ -302,12 +303,7 @@ export default function PersonaPopHandDrawn() {
 
     // 加载中状态
     if (!fontsLoaded || isLoadingSession || isLoadingResult) {
-        return (
-            <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' }}>
-                <ActivityIndicator size="large" color={COLORS.accent} />
-                <Text style={{ fontFamily: 'PatrickHand_400Regular', marginTop: 12, color: COLORS.fg }}>加载中...</Text>
-            </View>
-        );
+        return <LoadingView />;
     }
 
     const Header = ({ title, showBack, onBack }: any) => (
@@ -395,7 +391,7 @@ export default function PersonaPopHandDrawn() {
                                                 <Text style={styles.currentTypeName}>
                                                     {MBTI_TYPES.find(t => t.id === mbtiResult.type)?.name}
                                                 </Text>
-                                                <Text style={styles.currentTypeHint}>点击查看 AI 解码 →</Text>
+                                                <Text style={styles.currentTypeHint}>探索更多 ✨</Text>
                                             </View>
                                         </TouchableOpacity>
                                     ) : (
@@ -1383,8 +1379,9 @@ const styles = StyleSheet.create({
     currentTypeHint: {
         fontFamily: 'PatrickHand_400Regular',
         fontSize: 13,
-        color: '#888',
-        marginTop: 4,
+        color: '#aaa',
+        marginTop: 6,
+        fontStyle: 'italic',
     },
     // 探索模块
     exploreSection: {

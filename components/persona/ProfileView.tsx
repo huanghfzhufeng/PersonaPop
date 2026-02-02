@@ -274,14 +274,14 @@ export const ProfileView = ({ onLogout, onViewDetail, currentMbtiType }: Profile
                                 </Text>
                             </View>
                         </View>
-                        <Text style={styles.highlightHint}>点击查看完整解码 →</Text>
+                        <Text style={styles.highlightHint}>查看更多 ✨</Text>
                     </TouchableOpacity>
                 )}
 
                 {/* 没有解码时的引导 */}
                 {!cachedDetail && mbtiType && onViewDetail && (
                     <TouchableOpacity style={styles.decodePrompt} onPress={onViewDetail} activeOpacity={0.8}>
-                        <Text style={styles.decodePromptText}>🔮 点击解码你的 {mbtiType} 人格</Text>
+                        <Text style={styles.decodePromptText}>✨ 探索你的 {mbtiType} 人格</Text>
                     </TouchableOpacity>
                 )}
 
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
     },
     // 人格亮点卡片
     highlightCard: {
-        backgroundColor: '#FFF9E6',
+        backgroundColor: 'white',
         borderWidth: 3,
         borderColor: COLORS.fg,
         borderRadius: 16,
@@ -609,24 +609,29 @@ const styles = StyleSheet.create({
     highlightHint: {
         fontFamily: 'PatrickHand_400Regular',
         fontSize: 13,
-        color: COLORS.accent,
+        color: '#aaa',
         textAlign: 'right',
         marginTop: 8,
+        fontStyle: 'italic',
     },
     // 解码引导
     decodePrompt: {
-        backgroundColor: COLORS.accent,
+        backgroundColor: 'white',
         borderWidth: 3,
         borderColor: COLORS.fg,
         borderRadius: 12,
         padding: 16,
         marginBottom: 16,
         alignItems: 'center',
+        shadowColor: COLORS.fg,
+        shadowOffset: { width: 3, height: 3 },
+        shadowOpacity: 1,
+        shadowRadius: 0,
     },
     decodePromptText: {
         fontFamily: 'Kalam_700Bold',
         fontSize: 16,
-        color: 'white',
+        color: COLORS.fg,
     },
     statsGrid: {
         flexDirection: 'row',

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Animated, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Animated, Alert, BackHandler } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ChevronLeft, Clock, Zap, Target, CheckCircle, RotateCcw } from 'lucide-react-native';
 import { COLORS } from '@/constants/persona';
@@ -39,14 +39,22 @@ const MODE_CONFIG: Record<TestMode, { name: string; desc: string; icon: React.Re
 };
 
 const PROGRESS_MESSAGES = [
-  '让我们开始了解你吧~',
-  '继续保持！',
-  '你做得很棒！',
-  '已经过半啦~',
-  '快要完成了！',
-  '最后几题了！',
-  '马上就能看到结果！',
+  '相信你的直觉 ✨',
+  'INTJ 正在分析你的答案...',
+  'ENFP 觉得你很有趣！',
+  '已经过半啦，加油 💪',
+  'INFJ 在您您点头...',
+  '最后几题了，坚持住！',
+  '马上揭晓你的人格密码 🔮',
 ];
+
+// 维度颜色和说明
+const DIMENSION_CONFIG: Record<string, { color: string; bgColor: string; label: string }> = {
+  EI: { color: '#E91E63', bgColor: '#FCE4EC', label: '精力来源' },
+  SN: { color: '#9C27B0', bgColor: '#F3E5F5', label: '信息获取' },
+  TF: { color: '#2196F3', bgColor: '#E3F2FD', label: '决策方式' },
+  JP: { color: '#4CAF50', bgColor: '#E8F5E9', label: '生活态度' },
+};
 
 export const MbtiTest = ({ onComplete, onBack, initialMode }: MbtiTestProps) => {
   // 阶段状态
@@ -88,6 +96,30 @@ export const MbtiTest = ({ onComplete, onBack, initialMode }: MbtiTestProps) => 
     };
     loadProgress();
   }, []);
+
+  // 处理返回键
+  useEffect(() => {
+    const backAction = () => {
+      if (phase === 'test') {
+        // 测试中按返回键，弹出确认
+        Alert.alert(
+          '确定要退出吗？',
+          '别担心，你的进度已自动保存，下次可以继续~',
+          [
+            { text: '继续答题', style: 'cancel' },
+            { text: '退出', style: 'destructive', onPress: onBack },
+          ]
+        );
+        return true; // 阻止默认行为
+      }
+      // 选择模式页面，正常返回
+      onBack();
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [phase, onBack]);
 
   // 保存进度
   const saveProgress = useCallback(async (mode: TestMode, idx: number, ans: Answers, start: number) => {
@@ -335,7 +367,17 @@ export const MbtiTest = ({ onComplete, onBack, initialMode }: MbtiTestProps) => 
       <Animated.View style={[styles.questionCard, { opacity: fadeAnim }]}>
         <View style={styles.questionHeader}>
           <Text style={styles.questionNumber}>Q{currentIndex + 1}</Text>
-          <Text style={styles.dimensionTag}>{currentQuestion.dimension}</Text>
+          <View style={[
+            styles.dimensionTag,
+            { backgroundColor: DIMENSION_CONFIG[currentQuestion.dimension].bgColor }
+          ]}>
+            <Text style={[
+              styles.dimensionTagText,
+              { color: DIMENSION_CONFIG[currentQuestion.dimension].color }
+            ]}>
+              {currentQuestion.dimension} · {DIMENSION_CONFIG[currentQuestion.dimension].label}
+            </Text>
+          </View>
         </View>
         <Text style={styles.questionText}>{currentQuestion.text}</Text>
 
@@ -535,7 +577,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: COLORS.accent,
+    backgroundColor: COLORS.secondary,
     borderRadius: 4,
   },
   progressText: {
@@ -572,13 +614,18 @@ const styles = StyleSheet.create({
     color: COLORS.accent,
   },
   dimensionTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  dimensionTagText: {
     fontFamily: 'PatrickHand_400Regular',
     fontSize: 12,
-    color: '#888',
-    backgroundColor: COLORS.muted,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
+    fontWeight: '600',
   },
   questionText: {
     fontFamily: 'Kalam_700Bold',
