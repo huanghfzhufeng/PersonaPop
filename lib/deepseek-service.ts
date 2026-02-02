@@ -131,6 +131,118 @@ export async function generateLoadingTip(mbtiType: string): Promise<string> {
 }
 
 /**
+ * 人格详情数据结构
+ */
+export interface PersonalityDetail {
+    superPowers: string[];      // 超能力 (3个)
+    weaknesses: string[];       // 致命弱点 (3个)
+    soulmates: string[];        // 灵魂伴侣类型 (2个)
+    nemesis: string[];          // 冤家类型 (2个)
+    celebrities: string[];      // 名人同款 (3个)
+    userManual: string[];       // 使用说明书 (3条)
+    dailyFails: string[];       // 日常翻车现场 (3个)
+    personalInsight: string;    // 个性化洞察
+}
+
+/**
+ * AI 生成完整的人格详情分析
+ */
+export async function generatePersonalityDetail(
+    mbtiType: string,
+    scores: {
+        EI: { percentFirst: number; percentSecond: number };
+        SN: { percentFirst: number; percentSecond: number };
+        TF: { percentFirst: number; percentSecond: number };
+        JP: { percentFirst: number; percentSecond: number };
+    }
+): Promise<PersonalityDetail> {
+    const messages: ChatMessage[] = [
+        {
+            role: 'system',
+            content: `你是一个超级有趣、风趣幽默的 MBTI 人格分析师。请用年轻人喜欢的语言风格生成人格分析。
+要求：
+- 语言要有梗、好玩、接地气
+- 可以用网络流行语、表情包语言
+- 要能引起该类型人的共鸣和会心一笑
+- 每个条目不超过15个字
+
+请返回 JSON 格式（不要包含 markdown 标记）：
+{
+  "superPowers": ["超能力1", "超能力2", "超能力3"],
+  "weaknesses": ["弱点1", "弱点2", "弱点3"],
+  "soulmates": ["XXXX", "XXXX"],
+  "nemesis": ["XXXX", "XXXX"],
+  "celebrities": ["名人1", "名人2", "名人3"],
+  "userManual": ["使用说明1", "使用说明2", "使用说明3"],
+  "dailyFails": ["翻车1", "翻车2", "翻车3"],
+  "personalInsight": "个性化洞察，30字内"
+}`,
+        },
+        {
+            role: 'user',
+            content: `我的 MBTI 类型是 ${mbtiType}。
+我的四维度分布：
+- 外向 E: ${scores.EI.percentFirst}% vs 内向 I: ${scores.EI.percentSecond}%
+- 实感 S: ${scores.SN.percentFirst}% vs 直觉 N: ${scores.SN.percentSecond}%
+- 思考 T: ${scores.TF.percentFirst}% vs 情感 F: ${scores.TF.percentSecond}%
+- 判断 J: ${scores.JP.percentFirst}% vs 感知 P: ${scores.JP.percentSecond}%
+
+请根据我的具体分布生成个性化的人格分析，注意突出我各维度的特点。`,
+        },
+    ];
+
+    try {
+        const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+            },
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages,
+                temperature: 0.9,
+                max_tokens: 800,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`DeepSeek API error: ${response.status}`);
+        }
+
+        const data: DeepSeekResponse = await response.json();
+        const content = data.choices[0]?.message?.content || '';
+        
+        // 解析 JSON
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+        throw new Error('Invalid JSON response');
+    } catch (error) {
+        console.error('generatePersonalityDetail error:', error);
+        // 返回默认数据
+        return getDefaultPersonalityDetail(mbtiType);
+    }
+}
+
+/**
+ * 获取默认的人格详情（API 失败时的回退）
+ */
+function getDefaultPersonalityDetail(mbtiType: string): PersonalityDetail {
+    return {
+        superPowers: ['待解锁', '待解锁', '待解锁'],
+        weaknesses: ['待解锁', '待解锁', '待解锁'],
+        soulmates: ['???', '???'],
+        nemesis: ['???', '???'],
+        celebrities: ['待解锁', '待解锁', '待解锁'],
+        userManual: ['待解锁', '待解锁', '待解锁'],
+        dailyFails: ['待解锁', '待解锁', '待解锁'],
+        personalInsight: '正在解析你的人格密码...',
+    };
+}
+
+/**
  * 分析测试结果，生成个性化解读
  */
 export async function analyzeTestResult(mbtiType: string, answers: Record<number, string>): Promise<string> {

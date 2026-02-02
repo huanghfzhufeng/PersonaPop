@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Image } from 'expo-image';
-import { Sparkles, Share2, Download, Zap, User, Home, ArrowRight, ChevronLeft, PenTool, Heart, HelpCircle } from 'lucide-react-native';
+import { Sparkles, Share2, Download, Zap, User, Home, ArrowRight, ChevronLeft, PenTool, Heart } from 'lucide-react-native';
 import { useFonts, Kalam_700Bold } from '@expo-google-fonts/kalam';
 import { PatrickHand_400Regular } from '@expo-google-fonts/patrick-hand';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,9 +18,15 @@ import { StickyNote } from '@/components/persona/StickyNote';
 import { AuthView } from '@/components/persona/AuthView';
 import { ProfileView } from '@/components/persona/ProfileView';
 import { MbtiTest } from '@/components/persona/MbtiTest';
+import { MbtiResultView } from '@/components/persona/MbtiResultView';
+import { MbtiDetailView } from '@/components/persona/MbtiDetailView';
+import { MbtiResult, Answers, StoredMbtiResult, TestMode } from '@/lib/mbti-types';
 
 // Types
 type Tab = 'home' | 'create' | 'profile';
+// 主流程阶段: home(欢迎) -> test(测试) -> result(玩法中心) -> detail(AI详情) -> vibe(风格选择) -> generating(生成中) -> card(卡片结果)
+// quickSelect: 快速选择类型(跳过测试)
+type AppPhase = 'home' | 'test' | 'result' | 'detail' | 'vibe' | 'generating' | 'card' | 'quickSelect';
 
 export default function PersonaPopHandDrawn() {
     let [fontsLoaded] = useFonts({
@@ -29,59 +35,163 @@ export default function PersonaPopHandDrawn() {
     });
 
     const [activeTab, setActiveTab] = useState<Tab>('home');
-    const [step, setStep] = useState(0);
-    const [selectedType, setSelectedType] = useState<string | null>(null);
+    // 新流程状态
+    const [phase, setPhase] = useState<AppPhase>('home');
+    const [mbtiResult, setMbtiResult] = useState<MbtiResult | null>(null);
+    const [mbtiAnswers, setMbtiAnswers] = useState<Answers>({});
+    const [testDuration, setTestDuration] = useState(0);
+    const [storedResultId, setStoredResultId] = useState<string | null>(null);
+    const [storedResultDate, setStoredResultDate] = useState<string | null>(null);
+    const [isLoadingResult, setIsLoadingResult] = useState(false);
+    
+    // 卡片生成相关状态
     const [selectedVibe, setSelectedVibe] = useState<string | null>(null);
-    const [resultData, setResultData] = useState<any>(null);
+    const [cardData, setCardData] = useState<any>(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isFavorited, setIsFavorited] = useState(false);
     const [currentPersonaId, setCurrentPersonaId] = useState<string | null>(null);
-    
-    // 进度状态
     const [generationProgress, setGenerationProgress] = useState(0);
     const [generationStatus, setGenerationStatus] = useState('');
     const [currentFact, setCurrentFact] = useState('');
-    const [showMbtiTest, setShowMbtiTest] = useState(false);
     const [aiInsight, setAiInsight] = useState('');
+
+    // 探索模块状态
+    const [exploreTypeId, setExploreTypeId] = useState<string | null>(null);
 
     // Auth State
     const [session, setSession] = useState<any>(null);
     const [isLoadingSession, setIsLoadingSession] = useState(true);
 
+    // 获取用户的最新 MBTI 结果
+    const fetchLatestMbtiResult = useCallback(async (userId: string) => {
+        setIsLoadingResult(true);
+        try {
+            const { data, error } = await supabase
+                .from('mbti_results')
+                .select('*')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+            
+            if (data && !error) {
+                // 重建 MbtiResult 对象
+                const result: MbtiResult = {
+                    type: data.mbti_type,
+                    scores: data.scores,
+                    quality: data.quality,
+                    confidence: data.confidence,
+                };
+                setMbtiResult(result);
+                setMbtiAnswers(data.answers || {});
+                setStoredResultId(data.id);
+                setStoredResultDate(new Date(data.created_at).toLocaleDateString('zh-CN'));
+                setPhase('result'); // 有结果，直接进入玩法中心
+            } else {
+                // 没有结果，停留在欢迎页
+                setPhase('home');
+            }
+        } catch (err) {
+            console.log('No existing MBTI result');
+            setPhase('home');
+        } finally {
+            setIsLoadingResult(false);
+        }
+    }, []);
+
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setIsLoadingSession(false);
+            // 登录后检查是否有已保存的结果
+            if (session?.user) {
+                fetchLatestMbtiResult(session.user.id);
+            }
         });
 
-        supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
+            if (session?.user) {
+                fetchLatestMbtiResult(session.user.id);
+            } else {
+                // 登出后重置
+                setMbtiResult(null);
+                setPhase('home');
+            }
         });
-    }, []);
 
-    // Reset function that puts user back to Home
+        return () => subscription.unsubscribe();
+    }, [fetchLatestMbtiResult]);
+
+    // 重置回首页
     const reset = () => {
-        setStep(0);
+        setPhase('home');
         setActiveTab('home');
-        setSelectedType(null);
         setSelectedVibe(null);
-        setResultData(null);
+        setCardData(null);
         setIsFavorited(false);
         setCurrentPersonaId(null);
-        setShowMbtiTest(false);
     };
 
-    // Handle MBTI test completion
-    const handleTestComplete = (mbtiType: string) => {
-        setSelectedType(mbtiType);
-        setShowMbtiTest(false);
-        setStep(2); // Go to vibe selection
-    };
-
-    const generatePersona = async () => {
-        if (isGenerating) return;
+    // 测试完成处理
+    const handleTestComplete = async (result: MbtiResult, answers: Answers, durationSeconds: number, mode: TestMode) => {
+        setMbtiResult(result);
+        setMbtiAnswers(answers);
+        setTestDuration(durationSeconds);
         
-        setStep(3);
+        // 保存到 Supabase
+        if (session?.user) {
+            try {
+                const { data, error } = await supabase.from('mbti_results').insert({
+                    user_id: session.user.id,
+                    mbti_type: result.type,
+                    answers: answers,
+                    scores: result.scores,
+                    quality: result.quality,
+                    confidence: result.confidence,
+                    test_mode: mode,
+                    duration_seconds: durationSeconds,
+                }).select('id, created_at').single();
+                
+                if (data && !error) {
+                    setStoredResultId(data.id);
+                    setStoredResultDate(new Date(data.created_at).toLocaleDateString('zh-CN'));
+                }
+            } catch (err) {
+                console.error('Error saving MBTI result:', err);
+            }
+        }
+        
+        setPhase('result'); // 进入玩法中心
+    };
+
+    // 快速选择类型(跳过测试)
+    const handleQuickSelect = (mbtiType: string) => {
+        // 创建一个简化的结果（没有详细分数）
+        const quickResult: MbtiResult = {
+            type: mbtiType as any,
+            scores: {
+                EI: { first: 'E', second: 'I', scoreFirst: 0, scoreSecond: 0, winner: mbtiType[0] as 'E' | 'I', percentFirst: 50, percentSecond: 50 },
+                SN: { first: 'S', second: 'N', scoreFirst: 0, scoreSecond: 0, winner: mbtiType[1] as 'S' | 'N', percentFirst: 50, percentSecond: 50 },
+                TF: { first: 'T', second: 'F', scoreFirst: 0, scoreSecond: 0, winner: mbtiType[2] as 'T' | 'F', percentFirst: 50, percentSecond: 50 },
+                JP: { first: 'J', second: 'P', scoreFirst: 0, scoreSecond: 0, winner: mbtiType[3] as 'J' | 'P', percentFirst: 50, percentSecond: 50 },
+            },
+            quality: { straightLining: false, extremeResponse: false, centralTendency: false, randomPattern: false },
+            confidence: { overall: 0, factors: { dimensionClarity: 0, answerConsistency: 0, responseQuality: 0 }, qualityFlags: ['未进行测试，结果仅供参考'] },
+        };
+        setMbtiResult(quickResult);
+        setMbtiAnswers({});
+        setStoredResultDate(null);
+        setStoredResultId(null);
+        setPhase('result');
+    };
+
+    // 生成人格卡片
+    const generatePersonaCard = async () => {
+        if (isGenerating || !mbtiResult) return;
+        
+        const mbtiType = mbtiResult.type;
+        setPhase('generating');
         setIsGenerating(true);
         setIsFavorited(false);
         setCurrentPersonaId(null);
@@ -89,21 +199,21 @@ export default function PersonaPopHandDrawn() {
         setGenerationStatus(LOADING_MESSAGES[0]);
         
         // 设置随机趣事
-        const facts = MBTI_FACTS[selectedType || 'INFP']?.facts || [];
+        const facts = MBTI_FACTS[mbtiType]?.facts || [];
         if (facts.length > 0) {
             setCurrentFact(facts[Math.floor(Math.random() * facts.length)]);
         }
         
         // 异步获取 AI 洞察
         setAiInsight('');
-        generateMbtiInsight(selectedType || 'INFP', selectedVibe || 'dream')
+        generateMbtiInsight(mbtiType, selectedVibe || 'dream')
             .then(insight => setAiInsight(insight))
             .catch(() => setAiInsight(''));
 
         try {
-            const typeData = MBTI_TYPES.find(t => t.id === selectedType);
+            const typeData = MBTI_TYPES.find(t => t.id === mbtiType);
             const vibeData = VIBES.find(v => v.id === selectedVibe);
-            const texts = COPY_TEMPLATES[selectedType || ''] || COPY_TEMPLATES['DEFAULT'];
+            const texts = COPY_TEMPLATES[mbtiType] || COPY_TEMPLATES['DEFAULT'];
             const randomText = texts[Math.floor(Math.random() * texts.length)];
 
             // 进度回调函数
@@ -114,7 +224,7 @@ export default function PersonaPopHandDrawn() {
 
             // 使用 AI 服务生成图片
             const imageResult = await generatePersonaImage(
-                selectedType || 'INFP',
+                mbtiType,
                 selectedVibe || 'dream',
                 handleProgress
             );
@@ -128,13 +238,13 @@ export default function PersonaPopHandDrawn() {
                 isLocalImage: imageResult.isLocalImage
             };
 
-            setResultData(result);
+            setCardData(result);
 
             // Save to Supabase Personas Table
             if (session?.user) {
                 const { data, error } = await supabase.from('personas').insert({
                     user_id: session.user.id,
-                    mbti_type: selectedType || 'INFP',
+                    mbti_type: mbtiType,
                     vibe: selectedVibe || 'dream',
                     result_text: randomText,
                     image_url: imageResult.imageUrl,
@@ -148,11 +258,11 @@ export default function PersonaPopHandDrawn() {
                 }
             }
 
-            setStep(4);
+            setPhase('card');
         } catch (error) {
             console.error('Generation error:', error);
             Alert.alert('生成失败', '请稍后重试');
-            setStep(2);
+            setPhase('vibe');
         } finally {
             setIsGenerating(false);
         }
@@ -160,14 +270,14 @@ export default function PersonaPopHandDrawn() {
 
     // 分享图片
     const handleShare = async () => {
-        if (!resultData?.imageUrl) return;
-        await shareImage(resultData.imageUrl, `我的 ${resultData.type?.id} 人格卡片`);
+        if (!cardData?.imageUrl) return;
+        await shareImage(cardData.imageUrl, `我的 ${cardData.type?.id} 人格卡片`);
     };
 
     // 保存图片
     const handleSave = async () => {
-        if (!resultData?.imageUrl) return;
-        await saveImageToGallery(resultData.imageUrl);
+        if (!cardData?.imageUrl) return;
+        await saveImageToGallery(cardData.imageUrl);
     };
 
     // 切换收藏状态
@@ -185,8 +295,14 @@ export default function PersonaPopHandDrawn() {
         }
     };
 
-    if (!fontsLoaded || isLoadingSession) {
-        return <View style={{ flex: 1, backgroundColor: COLORS.bg }} />;
+    // 加载中状态
+    if (!fontsLoaded || isLoadingSession || isLoadingResult) {
+        return (
+            <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={COLORS.accent} />
+                <Text style={{ fontFamily: 'PatrickHand_400Regular', marginTop: 12, color: COLORS.fg }}>加载中...</Text>
+            </View>
+        );
     }
 
     const Header = ({ title, showBack, onBack }: any) => (
@@ -229,110 +345,199 @@ export default function PersonaPopHandDrawn() {
 
                 {/* Show Main App Flow unless in Profile Tab */}
                 {activeTab !== 'profile' && (
-                    <ScrollView
-                        contentContainerStyle={{ flexGrow: 1, paddingBottom: 100 }}
-                        showsVerticalScrollIndicator={false}
-                        style={{ flex: 1 }}
-                    >
-
-                        {/* STEP 0: HERO */}
-                        {step === 0 && (
-                            <View style={[styles.stepContainer, { justifyContent: 'center', alignItems: 'center' }]}>
-                                <View style={styles.logoContainer}>
-                                    <View style={styles.logoBox}>
-                                        <PenTool size={40} color={COLORS.fg} strokeWidth={2.5} />
-                                    </View>
-                                    <Zap size={32} color={COLORS.accent} style={{ position: 'absolute', top: -20, right: -20, transform: [{ rotate: '15deg' }] }} />
-                                </View>
-
-                                <Text style={styles.heroTitle}>
-                                    Persona{'\n'}
-                                    <Text style={{ color: COLORS.accent, textDecorationLine: 'underline' }}>Pop</Text>
-                                </Text>
-
-                                <StickyNote style={{ marginBottom: 40, transform: [{ rotate: '2deg' }] }}>
-                                    <Text style={styles.noteText}>
-                                        把你的 MBTI 变成一张手绘涂鸦。{'\n'}拒绝无聊的图表！✏️
-                                    </Text>
-                                </StickyNote>
-
-                                <HandButton onPress={() => setStep(1)} style={{ width: '100%' }} icon={ArrowRight}>
-                                    开始涂鸦
-                                </HandButton>
-
-                                {/* 吉祥物图片 */}
-                                <View style={styles.heroMascotContainer}>
-                                    <Image
-                                        source={require('@/assets/images/mascot-home.png')}
-                                        style={styles.heroMascot}
-                                        contentFit="contain"
-                                    />
-                                </View>
-
-                                <View style={styles.socialProof}>
-                                    <View style={styles.line} />
-                                    <Text style={styles.socialText}>已有 12k+ 人创作</Text>
-                                    <View style={styles.line} />
-                                </View>
-                            </View>
-                        )}
-
-                        {/* STEP 1: TYPE SELECTION */}
-                        {step === 1 && !showMbtiTest && (
-                            <View style={{ flex: 1 }}>
-                                <Header title="你是哪种人格?" showBack onBack={() => { setStep(0); setActiveTab('home'); }} />
-                                
-                                {/* 不确定？测一测按钮 */}
-                                <TouchableOpacity 
-                                    style={styles.testButton}
-                                    onPress={() => setShowMbtiTest(true)}
-                                >
-                                    <HelpCircle size={20} color={COLORS.accent} />
-                                    <Text style={styles.testButtonText}>不确定自己的类型？测一测</Text>
-                                </TouchableOpacity>
-                                
-                                <View style={styles.grid}>
-                                    {MBTI_TYPES.map((type) => (
-                                        <HandCard
-                                            key={type.id}
-                                            onPress={() => { setSelectedType(type.id); setStep(2); }}
-                                            style={{ width: '47%', marginBottom: 16, height: 180 }}
-                                        >
-                                            <View style={{ flex: 1, alignItems: 'center' }}>
-                                                {/* 角色图片 */}
-                                                <Image
-                                                    source={MBTI_IMAGES[type.id]}
-                                                    style={styles.typeCardImage}
-                                                    contentFit="contain"
-                                                />
-                                                <View style={{ alignItems: 'center', marginTop: 4 }}>
-                                                    <Text style={styles.cardTitle}>{type.id}</Text>
-                                                    <Text style={styles.cardSubtitle}>{type.name}</Text>
-                                                </View>
+                    <>
+                        {/* PHASE: HOME - 欢迎页/新用户入口 */}
+                        {phase === 'home' && (
+                            <ScrollView
+                                contentContainerStyle={{ flexGrow: 1, paddingBottom: 100 }}
+                                showsVerticalScrollIndicator={false}
+                            >
+                                <View style={[styles.stepContainer, { justifyContent: 'flex-start', alignItems: 'center', paddingTop: 16 }]}>
+                                    {/* 顶部: Logo + 吉祥物 */}
+                                    <View style={styles.topSection}>
+                                        <View style={styles.logoContainerSmall}>
+                                            <View style={styles.logoBoxSmall}>
+                                                <PenTool size={24} color={COLORS.fg} strokeWidth={2.5} />
                                             </View>
-                                        </HandCard>
-                                    ))}
+                                            <Text style={styles.logoTextSmall}>PersonaPop</Text>
+                                        </View>
+                                        <Image
+                                            source={require('@/assets/images/mascot-home.png')}
+                                            style={styles.mascotTop}
+                                            contentFit="contain"
+                                        />
+                                    </View>
+
+                                    {/* 根据是否有结果显示不同内容 */}
+                                    {mbtiResult ? (
+                                        // 已有结果 - 显示当前类型卡片
+                                        <TouchableOpacity 
+                                            style={styles.currentTypeCard}
+                                            onPress={() => {
+                                                setActiveTab('create');
+                                                setPhase('detail');
+                                            }}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Image
+                                                source={MBTI_IMAGES[mbtiResult.type]}
+                                                style={styles.currentTypeImage}
+                                                contentFit="contain"
+                                            />
+                                            <View style={styles.currentTypeInfo}>
+                                                <Text style={styles.currentTypeLabel}>你的人格</Text>
+                                                <Text style={styles.currentTypeText}>{mbtiResult.type}</Text>
+                                                <Text style={styles.currentTypeName}>
+                                                    {MBTI_TYPES.find(t => t.id === mbtiResult.type)?.name}
+                                                </Text>
+                                                <Text style={styles.currentTypeHint}>点击查看 AI 解码 →</Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                    ) : (
+                                        // 新用户 - 显示引导便签
+                                        <StickyNote style={{ marginBottom: 32, transform: [{ rotate: '2deg' }] }}>
+                                            <Text style={styles.noteText}>
+                                                通过 MBTI 测试了解自己，{`\n`}生成专属人格卡片！✏️
+                                            </Text>
+                                        </StickyNote>
+                                    )}
+
+                                    <HandButton onPress={() => setPhase('test')} style={{ width: '100%', marginBottom: 12 }} icon={ArrowRight}>
+                                        {mbtiResult ? '重新测试' : '开始测试'}
+                                    </HandButton>
+
+                                    {/* 跳过测试入口 */}
+                                    <TouchableOpacity 
+                                        onPress={() => setPhase('quickSelect')} 
+                                        style={styles.skipTestLink}
+                                    >
+                                        <Text style={styles.skipTestText}>
+                                            {mbtiResult ? '换个类型试试' : '已知道自己的类型？直接选择'}
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    {/* 探索 16 种人格 - 所有用户都显示 */}
+                                    <View style={styles.exploreSection}>
+                                        <View style={styles.exploreDivider}>
+                                            <View style={styles.line} />
+                                            <Text style={styles.exploreSectionTitle}>探索 16 种人格</Text>
+                                            <View style={styles.line} />
+                                        </View>
+                                        <ScrollView 
+                                            horizontal 
+                                            showsHorizontalScrollIndicator={false}
+                                            contentContainerStyle={styles.exploreScroll}
+                                        >
+                                            {MBTI_TYPES.map((type) => (
+                                                <TouchableOpacity
+                                                    key={type.id}
+                                                    onPress={() => setExploreTypeId(type.id)}
+                                                    activeOpacity={0.8}
+                                                    style={[
+                                                        styles.exploreCard,
+                                                        mbtiResult?.type === type.id && styles.exploreCardActive
+                                                    ]}
+                                                >
+                                                    <Image
+                                                        source={MBTI_IMAGES[type.id]}
+                                                        style={styles.exploreCardImage}
+                                                        contentFit="contain"
+                                                    />
+                                                    <Text style={styles.exploreCardType}>{type.id}</Text>
+                                                    <Text style={styles.exploreCardName}>{type.name}</Text>
+                                                    {mbtiResult?.type === type.id && (
+                                                        <View style={styles.currentBadge}>
+                                                            <Text style={styles.currentBadgeText}>当前</Text>
+                                                        </View>
+                                                    )}
+                                                </TouchableOpacity>
+                                            ))}
+                                        </ScrollView>
+                                    </View>
+
+                                    <View style={styles.socialProof}>
+                                        <View style={styles.line} />
+                                        <Text style={styles.socialText}>已有 12k+ 人完成测试</Text>
+                                        <View style={styles.line} />
+                                    </View>
                                 </View>
-                            </View>
+                            </ScrollView>
                         )}
 
-                        {/* MBTI TEST */}
-                        {step === 1 && showMbtiTest && (
+                        {/* PHASE: TEST - MBTI 测试 */}
+                        {phase === 'test' && (
                             <MbtiTest
                                 onComplete={handleTestComplete}
-                                onBack={() => setShowMbtiTest(false)}
+                                onBack={() => setPhase('home')}
                             />
                         )}
 
-                        {/* STEP 2: VIBE SELECTION */}
-                        {step === 2 && (
+                        {/* PHASE: QUICK SELECT - 快速选择类型 */}
+                        {phase === 'quickSelect' && (
                             <View style={{ flex: 1 }}>
-                                <Header title="当前心情 (Vibe)" showBack onBack={() => setStep(1)} />
-                                <View style={{ padding: 24, gap: 16 }}>
+                                <Header title="选择你的类型" showBack onBack={() => setPhase('home')} />
+                                <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
+                                    <Text style={styles.quickSelectHint}>
+                                        选择你已知的 MBTI 类型，或者
+                                        <Text 
+                                            style={{ color: COLORS.accent, textDecorationLine: 'underline' }}
+                                            onPress={() => setPhase('test')}
+                                        > 去测试 </Text>
+                                        了解真实的自己
+                                    </Text>
+                                    <View style={styles.grid}>
+                                        {MBTI_TYPES.map((type) => (
+                                            <HandCard
+                                                key={type.id}
+                                                onPress={() => handleQuickSelect(type.id)}
+                                                style={{ width: '47%', marginBottom: 16, height: 180 }}
+                                            >
+                                                <View style={{ flex: 1, alignItems: 'center' }}>
+                                                    <Image
+                                                        source={MBTI_IMAGES[type.id]}
+                                                        style={styles.typeCardImage}
+                                                        contentFit="contain"
+                                                    />
+                                                    <View style={{ alignItems: 'center', marginTop: 4 }}>
+                                                        <Text style={styles.cardTitle}>{type.id}</Text>
+                                                        <Text style={styles.cardSubtitle}>{type.name}</Text>
+                                                    </View>
+                                                </View>
+                                            </HandCard>
+                                        ))}
+                                    </View>
+                                </ScrollView>
+                            </View>
+                        )}
+
+                        {/* PHASE: RESULT - 玩法中心 */}
+                        {phase === 'result' && mbtiResult && (
+                            <MbtiResultView
+                                result={mbtiResult}
+                                testDate={storedResultDate || undefined}
+                                onGenerateCard={() => setPhase('vibe')}
+                                onRetakeTest={() => setPhase('test')}
+                                onViewDetail={() => setPhase('detail')}
+                            />
+                        )}
+
+                        {/* PHASE: DETAIL - AI 生成的人格详情 */}
+                        {phase === 'detail' && mbtiResult && (
+                            <MbtiDetailView
+                                result={mbtiResult}
+                                onBack={() => setPhase('result')}
+                            />
+                        )}
+
+                        {/* PHASE: VIBE - 风格选择 */}
+                        {phase === 'vibe' && mbtiResult && (
+                            <View style={{ flex: 1 }}>
+                                <Header title="选择卡片风格" showBack onBack={() => setPhase('result')} />
+                                <ScrollView contentContainerStyle={{ padding: 24, gap: 16 }}>
                                     {VIBES.map((vibe) => (
                                         <TouchableOpacity
                                             key={vibe.id}
-                                            onPress={() => { setSelectedVibe(vibe.id); generatePersona(); }}
+                                            onPress={() => { setSelectedVibe(vibe.id); generatePersonaCard(); }}
                                             activeOpacity={0.9}
                                             style={{ marginBottom: 16 }}
                                         >
@@ -347,17 +552,17 @@ export default function PersonaPopHandDrawn() {
                                             </View>
                                         </TouchableOpacity>
                                     ))}
-                                </View>
+                                </ScrollView>
                             </View>
                         )}
 
-                        {/* STEP 3: LOADING */}
-                        {step === 3 && selectedType && (
+                        {/* PHASE: GENERATING - 生成中 */}
+                        {phase === 'generating' && mbtiResult && (
                             <View style={[styles.stepContainer, { justifyContent: 'center', alignItems: 'center' }]}>
                                 {/* 角色图片 */}
                                 <View style={styles.loadingImageContainer}>
                                     <Image
-                                        source={MBTI_IMAGES[selectedType]}
+                                        source={MBTI_IMAGES[mbtiResult.type]}
                                         style={styles.loadingImage}
                                         contentFit="contain"
                                     />
@@ -365,12 +570,12 @@ export default function PersonaPopHandDrawn() {
                                 
                                 {/* 类型名称 */}
                                 <Text style={styles.loadingType}>
-                                    {selectedType} · {MBTI_TYPES.find(t => t.id === selectedType)?.name}
+                                    {mbtiResult.type} · {MBTI_TYPES.find(t => t.id === mbtiResult.type)?.name}
                                 </Text>
                                 
                                 {/* 特点标签 */}
                                 <View style={styles.traitsContainer}>
-                                    {MBTI_FACTS[selectedType]?.traits.map((trait, index) => (
+                                    {MBTI_FACTS[mbtiResult.type]?.traits.map((trait, index) => (
                                         <View key={index} style={styles.traitTag}>
                                             <Text style={styles.traitText}>{trait}</Text>
                                         </View>
@@ -391,7 +596,6 @@ export default function PersonaPopHandDrawn() {
                                         <Text style={styles.aiInsightText}>{aiInsight}</Text>
                                     </View>
                                 ) : (
-                                    /* 趣事卡片 */
                                     currentFact && (
                                         <View style={styles.factCard}>
                                             <Text style={styles.factEmoji}>💡</Text>
@@ -402,18 +606,17 @@ export default function PersonaPopHandDrawn() {
                                 
                                 {/* 有趣语录 */}
                                 <Text style={styles.funnyQuote}>
-                                    "{MBTI_FACTS[selectedType]?.funnyQuote}"
+                                    "{MBTI_FACTS[mbtiResult.type]?.funnyQuote}"
                                 </Text>
                             </View>
                         )}
 
-                        {/* STEP 4: RESULT */}
-                        {step === 4 && resultData && (
+                        {/* PHASE: CARD - 卡片结果 */}
+                        {phase === 'card' && cardData && (
                             <View style={{ flex: 1 }}>
-                                <Header title="完成啦！" showBack onBack={reset} />
+                                <Header title="完成啦！" showBack onBack={() => setPhase('result')} />
 
-                                <View style={{ padding: 24, alignItems: 'center' }}>
-
+                                <ScrollView contentContainerStyle={{ padding: 24, alignItems: 'center', paddingBottom: 100 }}>
                                     <View style={styles.resultFrame}>
                                         <View style={styles.tape} />
 
@@ -432,7 +635,7 @@ export default function PersonaPopHandDrawn() {
 
                                         <View style={styles.resultImageContainer}>
                                             <Image
-                                                source={resultData.isLocalImage ? resultData.imageUrl : { uri: resultData.imageUrl }}
+                                                source={cardData.isLocalImage ? cardData.imageUrl : { uri: cardData.imageUrl }}
                                                 style={styles.resultImage}
                                                 contentFit="cover"
                                                 transition={300}
@@ -441,9 +644,9 @@ export default function PersonaPopHandDrawn() {
                                         </View>
 
                                         <View style={{ alignItems: 'center', marginTop: 12 }}>
-                                            <Text style={styles.resultType}>{resultData.type?.id}</Text>
-                                            <Text style={styles.resultText}>"{resultData.text}"</Text>
-                                            {resultData.isPlaceholder && (
+                                            <Text style={styles.resultType}>{cardData.type?.id}</Text>
+                                            <Text style={styles.resultText}>"{cardData.text}"</Text>
+                                            {cardData.isPlaceholder && (
                                                 <Text style={styles.placeholderHint}>
                                                     (示例图片 - 配置 API Key 可生成 AI 图片)
                                                 </Text>
@@ -461,39 +664,138 @@ export default function PersonaPopHandDrawn() {
                                         </HandButton>
                                     </View>
 
-                                    <TouchableOpacity onPress={generatePersona} style={{ marginTop: 24 }} disabled={isGenerating}>
+                                    <TouchableOpacity onPress={generatePersonaCard} style={{ marginTop: 24 }} disabled={isGenerating}>
                                         <Text style={[styles.rerollText, isGenerating && { opacity: 0.5 }]}>
                                             {isGenerating ? '生成中...' : '不喜欢？重画一张'}
                                         </Text>
                                     </TouchableOpacity>
-                                </View>
+                                </ScrollView>
                             </View>
                         )}
-                    </ScrollView>
+                    </>
                 )}
 
                 {/* Profile Tab */}
                 {activeTab === 'profile' && (
-                    <ProfileView onLogout={() => supabase.auth.signOut()} />
+                    <ProfileView 
+                        onLogout={() => supabase.auth.signOut()} 
+                        currentMbtiType={mbtiResult?.type}
+                        onViewDetail={() => {
+                            setActiveTab('create');
+                            setPhase('detail');
+                        }}
+                    />
                 )}
+
+                {/* 探索类型详情 Modal */}
+                <Modal
+                    visible={!!exploreTypeId}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setExploreTypeId(null)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            {exploreTypeId && (
+                                <>
+                                    <TouchableOpacity 
+                                        style={styles.modalClose} 
+                                        onPress={() => setExploreTypeId(null)}
+                                    >
+                                        <Text style={styles.modalCloseText}>×</Text>
+                                    </TouchableOpacity>
+                                    
+                                    <Image
+                                        source={MBTI_IMAGES[exploreTypeId]}
+                                        style={styles.modalImage}
+                                        contentFit="contain"
+                                    />
+                                    
+                                    <Text style={styles.modalType}>{exploreTypeId}</Text>
+                                    <Text style={styles.modalName}>
+                                        {MBTI_TYPES.find(t => t.id === exploreTypeId)?.name}
+                                    </Text>
+                                    
+                                    {/* 特点标签 */}
+                                    <View style={styles.modalTraits}>
+                                        {MBTI_FACTS[exploreTypeId]?.traits.map((trait, i) => (
+                                            <View key={i} style={styles.modalTraitTag}>
+                                                <Text style={styles.modalTraitText}>{trait}</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                    
+                                    {/* 有趣语录 */}
+                                    <Text style={styles.modalQuote}>
+                                        "{MBTI_FACTS[exploreTypeId]?.funnyQuote}"
+                                    </Text>
+                                    
+                                    {/* 我是这个按钮 */}
+                                    <HandButton 
+                                        onPress={() => {
+                                            handleQuickSelect(exploreTypeId);
+                                            setExploreTypeId(null);
+                                        }}
+                                        style={{ marginTop: 16, width: '100%' }}
+                                    >
+                                        我是这个！
+                                    </HandButton>
+                                    
+                                    <TouchableOpacity 
+                                        onPress={() => setExploreTypeId(null)}
+                                        style={{ marginTop: 12 }}
+                                    >
+                                        <Text style={styles.modalContinue}>继续浏览</Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </View>
+                    </View>
+                </Modal>
 
                 {/* BOTTOM NAV */}
                 <View style={styles.bottomNav}>
-                    <TouchableOpacity onPress={() => { setActiveTab('home'); if (step > 0) reset(); }} style={styles.navItem}>
-                        <Home size={28} color={activeTab === 'home' ? COLORS.accent : COLORS.fg} strokeWidth={2.5} style={activeTab !== 'home' && { opacity: 0.5 }} />
-                        <Text style={[styles.navText, activeTab === 'home' && { color: COLORS.accent }]}>首页</Text>
+                    {/* 首页: 测试人格入口 */}
+                    <TouchableOpacity 
+                        onPress={() => { 
+                            setActiveTab('home'); 
+                            // 首页始终是测试入口
+                            setPhase(mbtiResult ? 'home' : 'home'); 
+                        }} 
+                        style={styles.navItem}
+                    >
+                        <Home size={28} color={activeTab === 'home' && phase !== 'result' ? COLORS.accent : COLORS.fg} strokeWidth={2.5} style={activeTab !== 'home' && { opacity: 0.5 }} />
+                        <Text style={[styles.navText, activeTab === 'home' && phase !== 'result' && { color: COLORS.accent }]}>测试</Text>
                     </TouchableOpacity>
 
+                    {/* 闪电: 玩法中心 */}
                     <View style={{ marginTop: -40 }}>
                         <TouchableOpacity
-                            onPress={() => { setActiveTab('create'); setStep(1); }}
+                            onPress={() => { 
+                                setActiveTab('create'); 
+                                if (mbtiResult) {
+                                    // 有结果，进入玩法中心
+                                    setPhase('result');
+                                } else {
+                                    // 没有结果，提示先测试
+                                    Alert.alert(
+                                        '请先完成测试',
+                                        '了解你的人格类型后，才能解锁更多玩法哦~',
+                                        [
+                                            { text: '稍后再说', style: 'cancel' },
+                                            { text: '去测试', onPress: () => { setActiveTab('home'); setPhase('test'); } },
+                                        ]
+                                    );
+                                }
+                            }}
                             activeOpacity={0.9}
-                            style={styles.fab}
+                            style={[styles.fab, !mbtiResult && { opacity: 0.6 }]}
                         >
                             <Zap size={32} color="white" strokeWidth={2.5} />
                         </TouchableOpacity>
                     </View>
 
+                    {/* 我的: 个人主页 */}
                     <TouchableOpacity onPress={() => setActiveTab('profile')} style={styles.navItem}>
                         <User size={28} color={activeTab === 'profile' ? COLORS.accent : COLORS.fg} strokeWidth={2.5} style={activeTab !== 'profile' && { opacity: 0.5 }} />
                         <Text style={[styles.navText, activeTab === 'profile' && { color: COLORS.accent }]}>我的</Text>
@@ -555,7 +857,39 @@ const styles = StyleSheet.create({
         shadowRadius: 0,
         elevation: 0,
     },
-    // Hero
+    // 顶部布局
+    topSection: {
+        width: '100%',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    logoContainerSmall: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12,
+    },
+    logoBoxSmall: {
+        width: 40,
+        height: 40,
+        backgroundColor: 'white',
+        borderWidth: 3,
+        borderColor: COLORS.fg,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 10,
+        transform: [{ rotate: '-3deg' }],
+    },
+    logoTextSmall: {
+        fontFamily: 'Kalam_700Bold',
+        fontSize: 28,
+        color: COLORS.fg,
+    },
+    mascotTop: {
+        width: 180,
+        height: 180,
+    },
+    // Hero (保留旧样式兼容)
     heroMascotContainer: {
         width: 180,
         height: 180,
@@ -616,6 +950,28 @@ const styles = StyleSheet.create({
         fontFamily: 'PatrickHand_400Regular',
         fontSize: 18,
         color: COLORS.fg,
+    },
+    // 跳过测试链接
+    skipTestLink: {
+        marginTop: 8,
+        paddingVertical: 4,
+    },
+    skipTestText: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 16,
+        color: '#888',
+        textDecorationLine: 'underline',
+        textDecorationStyle: 'dotted',
+    },
+    // 快速选择提示
+    quickSelectHint: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 16,
+        color: '#666',
+        textAlign: 'center',
+        marginBottom: 16,
+        paddingHorizontal: 16,
+        lineHeight: 24,
     },
     // Test button
     testButton: {
@@ -931,5 +1287,202 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 1,
         shadowRadius: 0,
-    }
+    },
+    // 当前类型卡片
+    currentTypeCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'white',
+        borderWidth: 4,
+        borderColor: COLORS.fg,
+        borderRadius: 20,
+        padding: 16,
+        marginBottom: 24,
+        width: '100%',
+        shadowColor: COLORS.fg,
+        shadowOffset: { width: 4, height: 4 },
+        shadowOpacity: 1,
+        shadowRadius: 0,
+    },
+    currentTypeImage: {
+        width: 100,
+        height: 100,
+    },
+    currentTypeInfo: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    currentTypeLabel: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 14,
+        color: '#888',
+    },
+    currentTypeText: {
+        fontFamily: 'Kalam_700Bold',
+        fontSize: 42,
+        color: COLORS.fg,
+        lineHeight: 46,
+    },
+    currentTypeName: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 18,
+        color: COLORS.accent,
+    },
+    currentTypeHint: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 13,
+        color: '#888',
+        marginTop: 4,
+    },
+    // 探索模块
+    exploreSection: {
+        width: '100%',
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    exploreDivider: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+        marginBottom: 12,
+    },
+    exploreSectionTitle: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 18,
+        color: COLORS.fg,
+    },
+    exploreScroll: {
+        paddingHorizontal: 8,
+        gap: 12,
+    },
+    exploreCard: {
+        width: 100,
+        backgroundColor: 'white',
+        borderWidth: 3,
+        borderColor: COLORS.fg,
+        borderRadius: 12,
+        padding: 8,
+        alignItems: 'center',
+        shadowColor: COLORS.fg,
+        shadowOffset: { width: 3, height: 3 },
+        shadowOpacity: 1,
+        shadowRadius: 0,
+        elevation: 3,
+    },
+    exploreCardImage: {
+        width: 64,
+        height: 64,
+    },
+    exploreCardType: {
+        fontFamily: 'Kalam_700Bold',
+        fontSize: 16,
+        color: COLORS.fg,
+        marginTop: 4,
+    },
+    exploreCardName: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 12,
+        color: '#666',
+    },
+    exploreCardActive: {
+        borderColor: COLORS.accent,
+        backgroundColor: '#FFF5F5',
+    },
+    currentBadge: {
+        position: 'absolute',
+        top: -8,
+        right: -8,
+        backgroundColor: COLORS.accent,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+        borderWidth: 2,
+        borderColor: COLORS.fg,
+    },
+    currentBadgeText: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 10,
+        color: 'white',
+    },
+    // 探索 Modal
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    modalContent: {
+        width: '100%',
+        maxWidth: 340,
+        backgroundColor: COLORS.bg,
+        borderWidth: 4,
+        borderColor: COLORS.fg,
+        borderRadius: 16,
+        padding: 24,
+        alignItems: 'center',
+    },
+    modalClose: {
+        position: 'absolute',
+        top: 8,
+        right: 12,
+        zIndex: 10,
+    },
+    modalCloseText: {
+        fontSize: 32,
+        color: COLORS.fg,
+        fontWeight: 'bold',
+    },
+    modalImage: {
+        width: 120,
+        height: 120,
+        marginBottom: 12,
+    },
+    modalType: {
+        fontFamily: 'Kalam_700Bold',
+        fontSize: 36,
+        color: COLORS.fg,
+        transform: [{ rotate: '-2deg' }],
+    },
+    modalName: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 20,
+        color: '#666',
+        marginBottom: 12,
+    },
+    modalTraits: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        gap: 8,
+        marginBottom: 16,
+    },
+    modalTraitTag: {
+        backgroundColor: COLORS.yellow,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 10,
+        borderWidth: 2,
+        borderColor: COLORS.fg,
+    },
+    modalTraitText: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 13,
+        color: COLORS.fg,
+    },
+    modalQuote: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 14,
+        color: '#888',
+        fontStyle: 'italic',
+        textAlign: 'center',
+        paddingHorizontal: 8,
+    },
+    modalContinue: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 14,
+        color: '#888',
+        textDecorationLine: 'underline',
+    },
 });

@@ -1,23 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, RefreshControl, Alert, Modal, Dimensions, ActivityIndicator } from 'react-native';
-import { LogOut, Heart, Trash2, X, Download, Share2, Copy, ChevronLeft, ChevronRight, Settings as SettingsIcon } from 'lucide-react-native';
+import { LogOut, Heart, Trash2, X, Download, Share2, ChevronLeft, ChevronRight, Settings as SettingsIcon, Zap, Skull, ChevronRight as ArrowRight } from 'lucide-react-native';
 import { Image } from 'expo-image';
-
-// Mascot images
-const mascotSettings = require('../../assets/images/mascot-settings.png');
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
-import { COLORS } from '../../constants/persona';
+import { COLORS, MBTI_TYPES, MBTI_IMAGES } from '../../constants/persona';
 import { supabase } from '@/lib/supabase';
 import { shareImage, saveImageToGallery, getShareableText } from '@/lib/share-utils';
 import { SettingsView } from './SettingsView';
+import { PersonalityDetail } from '@/lib/deepseek-service';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface ProfileViewProps {
     onLogout: () => void;
+    onViewDetail?: () => void;  // 进入人格解码页
+    currentMbtiType?: string;   // 当前 MBTI 类型
 }
 
-export const ProfileView = ({ onLogout }: ProfileViewProps) => {
+export const ProfileView = ({ onLogout, onViewDetail, currentMbtiType }: ProfileViewProps) => {
     const [user, setUser] = useState<any>(null);
     const [personas, setPersonas] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
@@ -27,12 +28,15 @@ export const ProfileView = ({ onLogout }: ProfileViewProps) => {
     const [isSaving, setIsSaving] = useState(false);
     const [isSharing, setIsSharing] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [mbtiTestCount, setMbtiTestCount] = useState(0);
+    const [cachedDetail, setCachedDetail] = useState<PersonalityDetail | null>(null);
 
     const fetchData = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
 
         if (user) {
+            // 获取卡片历史
             const { data, error } = await supabase
                 .from('personas')
                 .select('*')
@@ -42,7 +46,26 @@ export const ProfileView = ({ onLogout }: ProfileViewProps) => {
             if (data) {
                 setPersonas(data);
             }
+
+            // 获取测试次数
+            const { count } = await supabase
+                .from('mbti_results')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', user.id);
+            setMbtiTestCount(count || 0);
         }
+
+        // 获取缓存的 AI 解码结果
+        try {
+            const cached = await AsyncStorage.getItem('mbti_detail_cache');
+            if (cached) {
+                const cacheData = JSON.parse(cached);
+                if (cacheData.type === currentMbtiType) {
+                    setCachedDetail(cacheData.detail);
+                }
+            }
+        } catch (e) {}
+
         setRefreshing(false);
     };
 
@@ -173,6 +196,11 @@ export const ProfileView = ({ onLogout }: ProfileViewProps) => {
         return <SettingsView onBack={() => setShowSettings(false)} />;
     }
 
+    // 获取 MBTI 类型信息
+    const mbtiType = currentMbtiType || latestPersona?.mbti_type;
+    const typeInfo = mbtiType ? MBTI_TYPES.find(t => t.id === mbtiType) : null;
+    const mbtiImage = mbtiType ? MBTI_IMAGES[mbtiType] : null;
+
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -187,49 +215,94 @@ export const ProfileView = ({ onLogout }: ProfileViewProps) => {
                 </View>
             </View>
 
-            {/* Mascot Character */}
-            <View style={styles.mascotContainer}>
-                <Image
-                    source={mascotSettings}
-                    style={styles.mascot}
-                    contentFit="contain"
-                />
-            </View>
-
-            {/* User Card */}
-            <View style={styles.userCard}>
-                <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{user?.email?.[0].toUpperCase() || 'U'}</Text>
-                </View>
-                <View>
-                    <Text style={styles.userName}>{user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'}</Text>
-                    {latestPersona && (
-                        <View style={styles.badge}>
-                            <Text style={styles.badgeText}>{latestPersona.mbti_type}</Text>
-                        </View>
-                    )}
-                </View>
-            </View>
-
-            {/* Stats Grid */}
-            <View style={styles.statsGrid}>
-                <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{personas.length}</Text>
-                    <Text style={styles.statLabel}>已生成</Text>
-                </View>
-                <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{favoriteCount}</Text>
-                    <Text style={styles.statLabel}>收藏夹</Text>
-                </View>
-            </View>
-
-            {/* Saved Collection */}
-            <Text style={styles.sectionTitle}>历史记录</Text>
             <ScrollView
-                style={{ marginTop: 12 }}
-                contentContainerStyle={{ paddingBottom: 24 }}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 100 }}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             >
+                {/* User Card - MBTI 角色作为头像 */}
+                <View style={styles.userCard}>
+                    {mbtiImage ? (
+                        <Image source={mbtiImage} style={styles.avatarImage} contentFit="contain" />
+                    ) : (
+                        <View style={styles.avatar}>
+                            <Text style={styles.avatarText}>{user?.email?.[0].toUpperCase() || 'U'}</Text>
+                        </View>
+                    )}
+                    <View style={styles.userInfo}>
+                        <Text style={styles.userName}>
+                            {user?.user_metadata?.name || user?.phone || user?.email?.split('@')[0] || 'User'}
+                        </Text>
+                        {mbtiType && (
+                            <View style={styles.mbtiRow}>
+                                <View style={styles.badge}>
+                                    <Text style={styles.badgeText}>{mbtiType}</Text>
+                                </View>
+                                <Text style={styles.typeName}>{typeInfo?.name}</Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+
+                {/* 人格亮点卡片 - 来自 AI 解码 */}
+                {cachedDetail && onViewDetail && (
+                    <TouchableOpacity style={styles.highlightCard} onPress={onViewDetail} activeOpacity={0.8}>
+                        <View style={styles.highlightHeader}>
+                            <Text style={styles.highlightTitle}>🔮 人格亮点</Text>
+                            <ArrowRight size={20} color={COLORS.accent} />
+                        </View>
+                        <View style={styles.highlightContent}>
+                            <View style={styles.highlightItem}>
+                                <Zap size={16} color="#FFD700" />
+                                <Text style={styles.highlightLabel}>超能力</Text>
+                                <Text style={styles.highlightValue} numberOfLines={1}>
+                                    {cachedDetail.superPowers?.[0] || '-'}
+                                </Text>
+                            </View>
+                            <View style={styles.highlightItem}>
+                                <Skull size={16} color="#8B0000" />
+                                <Text style={styles.highlightLabel}>弱点</Text>
+                                <Text style={styles.highlightValue} numberOfLines={1}>
+                                    {cachedDetail.weaknesses?.[0] || '-'}
+                                </Text>
+                            </View>
+                            <View style={styles.highlightItem}>
+                                <Heart size={16} color="#4CAF50" />
+                                <Text style={styles.highlightLabel}>最配</Text>
+                                <Text style={styles.highlightValue}>
+                                    {cachedDetail.soulmates?.join(' ') || '-'}
+                                </Text>
+                            </View>
+                        </View>
+                        <Text style={styles.highlightHint}>点击查看完整解码 →</Text>
+                    </TouchableOpacity>
+                )}
+
+                {/* 没有解码时的引导 */}
+                {!cachedDetail && mbtiType && onViewDetail && (
+                    <TouchableOpacity style={styles.decodePrompt} onPress={onViewDetail} activeOpacity={0.8}>
+                        <Text style={styles.decodePromptText}>🔮 点击解码你的 {mbtiType} 人格</Text>
+                    </TouchableOpacity>
+                )}
+
+                {/* Stats Grid */}
+                <View style={styles.statsGrid}>
+                    <View style={styles.statBox}>
+                        <Text style={styles.statNumber}>{personas.length}</Text>
+                        <Text style={styles.statLabel}>已生成</Text>
+                    </View>
+                    <View style={styles.statBox}>
+                        <Text style={styles.statNumber}>{favoriteCount}</Text>
+                        <Text style={styles.statLabel}>收藏夹</Text>
+                    </View>
+                    <View style={styles.statBox}>
+                        <Text style={styles.statNumber}>{mbtiTestCount}</Text>
+                        <Text style={styles.statLabel}>测试次数</Text>
+                    </View>
+                </View>
+
+                {/* Saved Collection */}
+                <Text style={styles.sectionTitle}>历史记录</Text>
                 {personas.length === 0 ? (
                     <Text style={{ textAlign: 'center', color: '#888', marginTop: 20, fontFamily: 'PatrickHand_400Regular' }}>
                         还没有作品哦，快去创作吧！
@@ -420,14 +493,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
     },
-    mascotContainer: {
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    mascot: {
-        width: SCREEN_WIDTH * 0.4,
-        height: SCREEN_WIDTH * 0.4,
-    },
     headerTitle: {
         fontFamily: 'Kalam_700Bold',
         fontSize: 32,
@@ -440,13 +505,18 @@ const styles = StyleSheet.create({
         backgroundColor: 'white',
         borderWidth: 3,
         borderColor: COLORS.fg,
-        padding: 24,
+        padding: 16,
         borderRadius: 15,
-        marginBottom: 32,
+        marginBottom: 16,
         shadowColor: COLORS.fg,
         shadowOffset: { width: 4, height: 4 },
         shadowOpacity: 1,
         shadowRadius: 0,
+    },
+    avatarImage: {
+        width: 72,
+        height: 72,
+        marginRight: 12,
     },
     avatar: {
         width: 64,
@@ -457,32 +527,106 @@ const styles = StyleSheet.create({
         borderColor: COLORS.fg,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 16,
+        marginRight: 12,
     },
     avatarText: {
         fontFamily: 'Kalam_700Bold',
         fontSize: 28,
         color: COLORS.fg,
     },
+    userInfo: {
+        flex: 1,
+    },
     userName: {
         fontFamily: 'Kalam_700Bold',
-        fontSize: 28,
+        fontSize: 22,
         color: COLORS.fg,
         marginBottom: 4,
     },
+    mbtiRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
     badge: {
         backgroundColor: COLORS.accent,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderWidth: 1,
+        paddingHorizontal: 10,
+        paddingVertical: 3,
+        borderRadius: 4,
+        borderWidth: 2,
         borderColor: COLORS.fg,
-        transform: [{ rotate: '-2deg' }],
-        alignSelf: 'flex-start',
     },
     badgeText: {
-        fontFamily: 'PatrickHand_400Regular',
+        fontFamily: 'Kalam_700Bold',
         color: 'white',
         fontSize: 14,
+    },
+    typeName: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 16,
+        color: '#666',
+    },
+    // 人格亮点卡片
+    highlightCard: {
+        backgroundColor: '#FFF9E6',
+        borderWidth: 3,
+        borderColor: COLORS.fg,
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+    },
+    highlightHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    highlightTitle: {
+        fontFamily: 'Kalam_700Bold',
+        fontSize: 18,
+        color: COLORS.fg,
+    },
+    highlightContent: {
+        gap: 8,
+    },
+    highlightItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    highlightLabel: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 14,
+        color: '#666',
+        width: 50,
+    },
+    highlightValue: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 14,
+        color: COLORS.fg,
+        flex: 1,
+    },
+    highlightHint: {
+        fontFamily: 'PatrickHand_400Regular',
+        fontSize: 13,
+        color: COLORS.accent,
+        textAlign: 'right',
+        marginTop: 8,
+    },
+    // 解码引导
+    decodePrompt: {
+        backgroundColor: COLORS.accent,
+        borderWidth: 3,
+        borderColor: COLORS.fg,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 16,
+        alignItems: 'center',
+    },
+    decodePromptText: {
+        fontFamily: 'Kalam_700Bold',
+        fontSize: 16,
+        color: 'white',
     },
     statsGrid: {
         flexDirection: 'row',
