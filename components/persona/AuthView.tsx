@@ -67,9 +67,6 @@ export const AuthView = ({ onLogin }: AuthViewProps) => {
             />
             
             <View style={styles.content}>
-                {/* Decorative Tape */}
-                <View style={styles.tape} />
-
                 {/* Main Form Card */}
                 <View style={styles.card}>
                     <View style={{ alignItems: 'center', marginBottom: 24 }}>
@@ -148,19 +145,6 @@ const styles = StyleSheet.create({
         maxWidth: 400, // Limit width on tablets
         width: '100%',
         alignSelf: 'center',
-    },
-    tape: {
-        position: 'absolute',
-        top: -16,
-        left: '30%',
-        width: 120,
-        height: 32,
-        backgroundColor: 'rgba(229, 224, 216, 0.8)',
-        transform: [{ rotate: '-2deg' }],
-        borderLeftWidth: 1,
-        borderRightWidth: 1,
-        borderColor: 'rgba(255,255,255,0.4)',
-        zIndex: 20,
     },
     card: {
         backgroundColor: 'white',

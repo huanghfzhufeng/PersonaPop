@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
-import { Sparkles, RefreshCw, History, MessageCircle, Palette, Users, Smile, Calendar, Heart } from 'lucide-react-native';
+import { Sparkles, Palette, Users, Smile, Calendar, Heart, MessageCircle } from 'lucide-react-native';
 import { COLORS, MBTI_TYPES, MBTI_IMAGES } from '@/constants/persona';
 import { MbtiResult, Dimension } from '@/lib/mbti-types';
 import { getLetterMeaning } from '@/lib/mbti-calculation';
@@ -10,9 +10,6 @@ interface MbtiResultViewProps {
   result: MbtiResult;
   testDate?: string;
   onGenerateCard: () => void;
-  onRetakeTest: () => void;
-  onViewHistory?: () => void;
-  onAiChat?: () => void;
   onViewDetail?: () => void;
 }
 
@@ -20,13 +17,20 @@ interface MbtiResultViewProps {
  * MBTI 测试结果展示组件
  * 作为玩法中心的入口页面
  */
+// 功能卡片数据
+const FEATURES = [
+  { id: 'card', title: '人格卡片', desc: '专属艺术卡片', icon: Palette, color: '#ff4d4d', disabled: false },
+  { id: 'compare', title: '类型对比', desc: '和朋友比一比', icon: Users, color: '#2d5da1', disabled: false, isNew: true },
+  { id: 'emoji', title: '人格表情', desc: '专属表情包', icon: Smile, color: '#fff9c4', disabled: true },
+  { id: 'fortune', title: '每日运势', desc: '人格日报', icon: Calendar, color: '#a8d5ba', disabled: true },
+  { id: 'match', title: '缘分匹配', desc: '测测契合度', icon: Heart, color: '#f8b4b4', disabled: true },
+  { id: 'ai', title: 'AI 助手', desc: '智能对话', icon: MessageCircle, color: '#b8a9c9', disabled: true },
+];
+
 export const MbtiResultView = ({
   result,
   testDate,
   onGenerateCard,
-  onRetakeTest,
-  onViewHistory,
-  onAiChat,
   onViewDetail,
 }: MbtiResultViewProps) => {
   const typeInfo = MBTI_TYPES.find((t) => t.id === result.type);
@@ -89,7 +93,6 @@ export const MbtiResultView = ({
         onPress={onViewDetail}
         activeOpacity={onViewDetail ? 0.8 : 1}
       >
-        <View style={styles.tape} />
         
         {/* 顶部：头像 + 类型信息 */}
         <View style={styles.typeRow}>
@@ -137,109 +140,39 @@ export const MbtiResultView = ({
         </View>
       )}
 
-      {/* 玩法入口 - 横向滑动 */}
+      {/* 玩法入口 - 手动滑动轮播 */}
       <Text style={styles.sectionTitle}>选择你想玩的</Text>
-      <ScrollView 
-        horizontal 
+      <ScrollView
+        horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.featuresScroll}
-        style={styles.featuresScrollContainer}
+        contentContainerStyle={styles.carouselScroll}
+        style={styles.carouselContainer}
       >
-        {/* 生成卡片 */}
-        <TouchableOpacity
-          style={styles.featureCard}
-          onPress={onGenerateCard}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.featureIcon, { backgroundColor: COLORS.accent }]}>
-            <Palette size={24} color="white" />
-          </View>
-          <Text style={styles.featureTitle}>人格卡片</Text>
-          <Text style={styles.featureDesc}>专属艺术卡片</Text>
-        </TouchableOpacity>
-
-        {/* 类型对比 */}
-        <TouchableOpacity
-          style={styles.featureCard}
-          onPress={() => {}}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.featureIcon, { backgroundColor: COLORS.secondary }]}>
-            <Users size={24} color="white" />
-          </View>
-          <Text style={styles.featureTitle}>类型对比</Text>
-          <Text style={styles.featureDesc}>和朋友比一比</Text>
-          <View style={styles.newBadge}><Text style={styles.newBadgeText}>NEW</Text></View>
-        </TouchableOpacity>
-
-        {/* 表情包 */}
-        <TouchableOpacity
-          style={[styles.featureCard, styles.featureCardDisabled]}
-          activeOpacity={1}
-        >
-          <View style={[styles.featureIcon, { backgroundColor: COLORS.yellow }]}>
-            <Smile size={24} color={COLORS.fg} />
-          </View>
-          <Text style={styles.featureTitle}>人格表情</Text>
-          <Text style={styles.featureDesc}>专属表情包</Text>
-          <View style={styles.comingSoonBadge}><Text style={styles.comingSoonText}>即将</Text></View>
-        </TouchableOpacity>
-
-        {/* 每日运势 */}
-        <TouchableOpacity
-          style={[styles.featureCard, styles.featureCardDisabled]}
-          activeOpacity={1}
-        >
-          <View style={[styles.featureIcon, { backgroundColor: '#a8d5ba' }]}>
-            <Calendar size={24} color={COLORS.fg} />
-          </View>
-          <Text style={styles.featureTitle}>每日运势</Text>
-          <Text style={styles.featureDesc}>人格日报</Text>
-          <View style={styles.comingSoonBadge}><Text style={styles.comingSoonText}>即将</Text></View>
-        </TouchableOpacity>
-
-        {/* AI 助手 */}
-        <TouchableOpacity
-          style={[styles.featureCard, !onAiChat && styles.featureCardDisabled]}
-          onPress={onAiChat}
-          activeOpacity={onAiChat ? 0.8 : 1}
-        >
-          <View style={[styles.featureIcon, { backgroundColor: '#b8a9c9' }]}>
-            <MessageCircle size={24} color="white" />
-          </View>
-          <Text style={styles.featureTitle}>AI 助手</Text>
-          <Text style={styles.featureDesc}>智能对话</Text>
-          {!onAiChat && <View style={styles.comingSoonBadge}><Text style={styles.comingSoonText}>即将</Text></View>}
-        </TouchableOpacity>
-
-        {/* 匹配测试 */}
-        <TouchableOpacity
-          style={[styles.featureCard, styles.featureCardDisabled]}
-          activeOpacity={1}
-        >
-          <View style={[styles.featureIcon, { backgroundColor: '#f8b4b4' }]}>
-            <Heart size={24} color="white" />
-          </View>
-          <Text style={styles.featureTitle}>缘分匹配</Text>
-          <Text style={styles.featureDesc}>测测契合度</Text>
-          <View style={styles.comingSoonBadge}><Text style={styles.comingSoonText}>即将</Text></View>
-        </TouchableOpacity>
+        {FEATURES.map((feature) => {
+          const IconComponent = feature.icon;
+          const isLightBg = feature.color === '#fff9c4' || feature.color === '#a8d5ba' || feature.color === '#f8b4b4';
+          return (
+            <TouchableOpacity
+              key={feature.id}
+              style={[styles.featureCard, feature.disabled && styles.featureCardDisabled]}
+              onPress={feature.id === 'card' ? onGenerateCard : undefined}
+              activeOpacity={feature.disabled ? 1 : 0.8}
+            >
+              <View style={[styles.featureIcon, { backgroundColor: feature.color }]}>
+                <IconComponent size={24} color={isLightBg ? COLORS.fg : 'white'} />
+              </View>
+              <Text style={styles.featureTitle}>{feature.title}</Text>
+              <Text style={styles.featureDesc}>{feature.desc}</Text>
+              {feature.isNew && (
+                <View style={styles.newBadge}><Text style={styles.newBadgeText}>NEW</Text></View>
+              )}
+              {feature.disabled && (
+                <View style={styles.comingSoonBadge}><Text style={styles.comingSoonText}>即将</Text></View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
-
-      {/* 底部操作 */}
-      <View style={styles.actionsRow}>
-        <TouchableOpacity style={styles.actionButton} onPress={onRetakeTest}>
-          <RefreshCw size={20} color={COLORS.fg} />
-          <Text style={styles.actionText}>重新测试</Text>
-        </TouchableOpacity>
-
-        {onViewHistory && (
-          <TouchableOpacity style={styles.actionButton} onPress={onViewHistory}>
-            <History size={20} color={COLORS.fg} />
-            <Text style={styles.actionText}>历史记录</Text>
-          </TouchableOpacity>
-        )}
-      </View>
     </ScrollView>
   );
 };
@@ -247,7 +180,8 @@ export const MbtiResultView = ({
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 100,
+    paddingBottom: 90,
+    flexGrow: 1,
   },
   combinedCard: {
     backgroundColor: 'white',
@@ -257,16 +191,6 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     position: 'relative',
-  },
-  tape: {
-    position: 'absolute',
-    top: -16,
-    left: '50%',
-    marginLeft: -50,
-    width: 100,
-    height: 28,
-    backgroundColor: 'rgba(229, 224, 216, 0.9)',
-    transform: [{ rotate: '-2deg' }],
   },
   typeRow: {
     flexDirection: 'row',
@@ -422,17 +346,16 @@ const styles = StyleSheet.create({
     color: '#856404',
     marginBottom: 4,
   },
-  featuresScrollContainer: {
+  carouselContainer: {
     marginHorizontal: -16,
-    marginBottom: 20,
   },
-  featuresScroll: {
-    paddingLeft: 16,
-    paddingRight: 40,
+  carouselScroll: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     gap: 12,
   },
   featureCard: {
-    width: 90,
+    width: 110,
     backgroundColor: 'white',
     borderWidth: 3,
     borderColor: COLORS.fg,
@@ -440,6 +363,8 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
     position: 'relative',
+    minHeight: 140,
+    justifyContent: 'center',
   },
   featureCardDisabled: {
     opacity: 0.5,
@@ -494,26 +419,7 @@ const styles = StyleSheet.create({
   },
   comingSoonText: {
     fontFamily: 'PatrickHand_400Regular',
-    fontSize: 9,
+    fontSize: 10,
     color: '#666',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 24,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  actionText: {
-    fontFamily: 'PatrickHand_400Regular',
-    fontSize: 16,
-    color: COLORS.fg,
-    textDecorationLine: 'underline',
-    textDecorationStyle: 'dotted',
   },
 });
